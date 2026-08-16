@@ -1,0 +1,142 @@
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * WORKTRACK DESIGN TOKENS
+ *
+ * Brand palette: Royal Blue #162660 · Powder Blue #D0E6FD · Bone #F1E4D1.
+ *
+ * WHY THIS PALETTE AND NOT THE WARM ONE. This product uses colour to carry
+ * MEANING before it carries brand: emerald = on track, amber = at risk, red =
+ * stalled and overdue, slate = on hold. A brand palette built on Persian Orange
+ * (#CF8852) and Dark Moss (#525333) would sit directly on top of the amber and
+ * emerald those flags need, and on a board of 500 cards the reader would have to
+ * decide, every time, whether an orange chip meant "our brand" or "this is
+ * slipping". Navy, powder blue and bone occupy a part of the wheel that none of
+ * the status colours use, so the chrome stays quiet and the flags stay loud.
+ * That is the whole job of chrome in a monitoring tool.
+ *
+ * Every colour below is a TOKEN. Components reference tokens (bg-canvas,
+ * text-ink-soft, bg-royal-900) and never raw hex, so the palette can be changed
+ * in this file alone. The one deliberate exception is tag chips, whose colour is
+ * user data stored per tag and applied inline.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
+        'Segoe UI Symbol', 'Noto Color Emoji';
+
+    /* ── Royal Blue — the brand anchor. Headers, primary actions, focus. ────── */
+    --color-royal-50: #f2f6fe;
+    --color-royal-100: #e3ebfb;
+    --color-royal-200: #c7d6f5;
+    --color-royal-300: #a3bbeb;
+    --color-royal-400: #7b99e0;
+    --color-royal-500: #5578d2;
+    --color-royal-600: #3a5ac0;
+    --color-royal-700: #2a45a0;
+    --color-royal-800: #1f3480;
+    --color-royal-900: #162660;  /* ← the brand colour */
+    --color-royal-950: #0c1636;
+
+    /* ── Powder Blue — selection, emphasis, the "you are here" surface. ────── */
+    --color-powder-100: #eef5ff;
+    --color-powder-200: #e0edfe;
+    --color-powder-300: #d0e6fd;  /* ← as given */
+    --color-powder-400: #b4d5f9;
+    --color-powder-500: #93c0f3;
+    --color-powder-600: #6ba4e8;
+
+    /* ── Bone — the warm neutral the whole app sits on. ─────────────────────── */
+    --color-bone-50: #fdfbf8;
+    --color-bone-100: #faf6f0;
+    --color-bone-200: #f6efe5;
+    --color-bone-300: #f1e4d1;  /* ← as given */
+    --color-bone-400: #e6d3b8;
+    --color-bone-500: #d6bd9a;
+
+    /*
+     * ── Semantic roles ──────────────────────────────────────────────────────
+     * These are what components should reach for. The palette steps above are
+     * the vocabulary; these are the sentences.
+     */
+    --color-canvas: #faf6f0;        /* page background — bone, diluted so white cards still read as raised */
+    --color-canvas-sunken: #f4ede3; /* board columns: a well the cards sit inside */
+    --color-surface: #ffffff;       /* cards, panels, modals */
+
+    --color-ink: #101a3d;           /* body text — navy-black, not pure black. 16.4:1 on surface */
+    --color-ink-soft: #55607d;      /* secondary text. 6.6:1 on surface, 6.1:1 on canvas */
+    --color-ink-faint: #7d8599;     /* metadata and timestamps. 4.6:1 on surface */
+    --color-ink-inverse: #f3f6fd;   /* text on royal-900. 15.1:1 */
+
+    --color-line: #ebe4d9;          /* hairline on canvas — warm, so it belongs to bone */
+    --color-line-soft: #f0eae1;
+    --color-line-strong: #ddd3c4;
+
+    /*
+     * ── Step semantics (FR-3.2) ─────────────────────────────────────────────
+     * Named by MEANING, not by hue, because the meaning is fixed and the hue is
+     * not: intake is waiting, active counts toward cycle time, terminal stops
+     * the clock. 'active' is royal-600 so the column doing the real work is the
+     * one wearing the brand.
+     */
+    --color-step-intake: #a89575;
+    --color-step-active: #3a5ac0;
+    --color-step-terminal: #0f9d63;
+
+    /*
+     * ── Health flags (FR-4.6) ───────────────────────────────────────────────
+     * Deliberately NOT brand colours, and deliberately far from them. These are
+     * the only colours on the board that mean something urgent, and everything
+     * else is tuned to stay out of their way. Each is always paired with a text
+     * label in the UI — colour alone never carries the state.
+     */
+    --color-health-ontrack: #0f9d63;
+    --color-health-ontrack-bg: #e7f7f0;
+    --color-health-atrisk: #b26205;
+    --color-health-atrisk-bg: #fdf2e2;
+    --color-health-stalled: #c8283c;
+    --color-health-stalled-bg: #fdecee;
+    --color-health-onhold: #5c6478;
+    --color-health-onhold-bg: #eceef3;
+}
+
+/*
+ * Alpine's x-cloak: hide an element until Alpine has hydrated it, so a dropdown
+ * or a dialog never flashes open on first paint.
+ */
+[x-cloak] {
+    display: none !important;
+}
+
+/*
+ * Tabular figures for anything the eye reads as a column — day counts, task
+ * progress, metric tiles. Without this, "11d" and "24d" are different widths and
+ * a column of them visibly shivers.
+ */
+.tnum {
+    font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Inputs that grow to fit their content, used by the inline step-rename fields.
+ * field-sizing is not universal yet, so the `size` attribute remains the fallback.
+ */
+.field-sizing-content {
+    field-sizing: content;
+}
+
+/* Respect the system setting. Motion here is feedback, never decoration. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>app</directory>
+        </include>
+    </source>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
+        <env name="CACHE_STORE" value="array"/>
+        <!--
+            Tests run against MySQL, NOT sqlite :memory:.
+
+            This is deliberate and load-bearing. Worktrack's tracker-isolation
+            guarantee (NFR-S3 / FR-2.9) is enforced by the database engine, not by
+            application code: composite foreign keys, STORED generated columns
+            carrying partial-uniqueness, and CHECK constraints. SQLite does not
+            reproduce those semantics, so a sqlite test run would report green while
+            proving nothing about the controls that matter most — the worst possible
+            failure mode for a security boundary.
+
+            Requires: CREATE DATABASE worktrack_testing;
+        -->
+        <env name="DB_CONNECTION" value="mysql"/>
+        <env name="DB_DATABASE" value="worktrack_testing"/>
+        <env name="DB_URL" value=""/>
+        <env name="MAIL_MAILER" value="array"/>
+        <env name="QUEUE_CONNECTION" value="sync"/>
+        <!-- database, not array: FR-1.7 revocation works by DELETING session rows,
+             so an array driver would silently skip the test that proves suspension
+             takes effect on the next request rather than the next login. -->
+        <env name="SESSION_DRIVER" value="database"/>
+        <env name="PULSE_ENABLED" value="false"/>
+        <!-- Progressive break-glass failure delay is real usleep in production;
+             zero it here so the 40-failure flood regression test stays fast. -->
+        <env name="WORKTRACK_BREAK_GLASS_DELAY_CAP_MS" value="0"/>
+        <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="NIGHTWATCH_ENABLED" value="false"/>
+    </php>
+</phpunit>
