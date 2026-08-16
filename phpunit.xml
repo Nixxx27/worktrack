@@ -19,6 +19,11 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!-- Pinned because route() resolves against APP_URL before the first request is
+             made. Left unset it inherits the developer's .env, so a machine running
+             Herd generates worktrack.test URLs and every test that walks the OAuth
+             round trip crosses an origin boundary the test author never wrote. -->
+        <env name="APP_URL" value="http://localhost"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
@@ -39,6 +44,11 @@
         <env name="DB_CONNECTION" value="mysql"/>
         <env name="DB_DATABASE" value="worktrack_testing"/>
         <env name="DB_URL" value=""/>
+        <!-- Pinned so the OAuth origin guard is tested against a fixed host rather than
+             whatever the developer's .env happens to say. Host must be `localhost`,
+             which is the host Laravel's test client requests from — anything else and
+             every Google test would be answered by the guard's redirect. -->
+        <env name="GOOGLE_REDIRECT_URI" value="http://localhost/auth/google/callback"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <!-- database, not array: FR-1.7 revocation works by DELETING session rows,

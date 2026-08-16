@@ -10,11 +10,13 @@ use App\Services\Auth\UserStateMachine;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
 use Laravel\Socialite\Contracts\Provider;
 use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\InvalidStateException;
 use Laravel\Socialite\Two\User as SocialiteUser;
 
 describe('the approval gate', function () {
@@ -415,5 +417,98 @@ describe('there is no password reset path', function () {
         // AUTH-D17 — a reset over Gmail SMTP would depend on the very infrastructure
         // break-glass exists to survive without.
         expect(Schema::hasTable('password_reset_tokens'))->toBeFalse();
+    });
+});
+
+describe('the OAuth flow starts on the host Google returns to', function () {
+
+    /*
+     * Regression cover for the "first sign-in always fails, the retry always works"
+     * report. Google returns to one registered host; beginning the flow on a different
+     * one strands `state` in a cookie that host never sends, so the callback fails its
+     * CSRF check exactly once and the resulting redirect deposits the browser on the
+     * correct host, where attempt two then succeeds.
+     */
+
+    it('sends the browser to the callback host before handing off to Google', function () {
+        config(['services.google.redirect' => 'http://localhost:8000/auth/google/callback']);
+
+        $this->get('http://worktrack.test/auth/google/redirect?remember=1')
+            ->assertRedirect('http://localhost:8000/auth/google/redirect?remember=1');
+    });
+
+    it('carries the remember-me choice across the correction', function () {
+        // The checkbox is read on the redirect leg, so a guard that dropped the query
+        // string would silently turn every ticked box into an unticked one.
+        config(['services.google.redirect' => 'http://localhost:8000/auth/google/callback']);
+
+        $this->get('http://worktrack.test/auth/google/redirect?remember=1')
+            ->assertRedirect('http://localhost:8000/auth/google/redirect?remember=1');
+
+        $this->get('http://worktrack.test/auth/google/redirect')
+            ->assertRedirect('http://localhost:8000/auth/google/redirect');
+    });
+
+    it('hands off to Google untouched when the host already matches', function () {
+        // Host-only comparison: the configured URI names a port the test client does
+        // not use, and that must NOT be treated as a foreign origin — cookies ignore
+        // ports, so a port mismatch is not a lost session.
+        config(['services.google.redirect' => 'http://localhost:8000/auth/google/callback']);
+
+        $this->get('http://localhost/auth/google/redirect')
+            ->assertRedirectContains('accounts.google.com');
+    });
+
+    it('stays out of the way when no redirect URI is configured', function () {
+        config(['services.google.redirect' => null]);
+
+        $this->get('http://worktrack.test/auth/google/redirect')
+            ->assertRedirectContains('accounts.google.com');
+    });
+});
+
+describe('failed sign-ins are not silent', function () {
+
+    /** Drive the callback with a provider that throws. */
+    function failingCallback(Throwable $thrown): TestResponse
+    {
+        $provider = Mockery::mock(Provider::class);
+        $provider->shouldReceive('user')->andThrow($thrown);
+        Socialite::shouldReceive('driver')->with('google')->andReturn($provider);
+
+        return test()->get(route('auth.google.callback'));
+    }
+
+    it('logs a state mismatch as a warning and says the sign-in expired', function () {
+        Log::shouldReceive('warning')
+            ->once()
+            ->withArgs(fn ($message) => str_contains($message, 'state mismatch'));
+
+        failingCallback(new InvalidStateException)
+            ->assertRedirect(route('login'))
+            ->assertSessionHasErrors('google');
+
+        expect(session('errors')->first('google'))->toContain('expired');
+    });
+
+    it('logs a provider failure as an error, recording the exception class', function () {
+        // Without this the generic user-facing message is the ONLY trace a real outage
+        // leaves — indistinguishable from a user who simply left the page open.
+        Log::shouldReceive('error')
+            ->once()
+            ->withArgs(fn ($message, $context) => $context['exception'] === RuntimeException::class
+                && str_contains($context['message'], 'token endpoint refused'));
+
+        failingCallback(new RuntimeException('token endpoint refused the exchange'))
+            ->assertRedirect(route('login'))
+            ->assertSessionHasErrors('google');
+    });
+
+    it('does not sign anyone in when the provider fails', function () {
+        Log::shouldReceive('error')->once();
+
+        failingCallback(new RuntimeException('boom'));
+
+        expect(Auth::check())->toBeFalse();
     });
 });
