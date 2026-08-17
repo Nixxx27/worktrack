@@ -26,9 +26,7 @@
                 'on_hold' => 'bg-health-onhold-bg text-health-onhold',
             };
             $days = (int) $project->current_step_entered_at->diffInDays(now());
-            $overdue = $project->target_date
-                && $project->current_step_type->value !== 'terminal'
-                && $project->target_date->isPast();
+            $overdue = $project->isOverdue();
             $initials = fn ($name) => \Illuminate\Support\Str::of($name)
                 ->explode(' ')->take(2)->map(fn ($p) => mb_substr($p, 0, 1))->implode('');
             $tabs = ['tasks' => 'Checklist', 'files' => 'Files', 'history' => 'History'];
@@ -543,7 +541,7 @@
                                                         </span>
                                                     @endif
                                                     @if ($task->due_date)
-                                                        <span class="tnum font-mono {{ ! $task->is_done && $task->due_date->isPast() ? 'font-semibold text-health-stalled' : '' }}">
+                                                        <span class="tnum font-mono {{ $task->isOverdue() ? 'font-semibold text-health-stalled' : '' }}">
                                                             due {{ $task->due_date->format('j M') }}
                                                         </span>
                                                     @endif
@@ -678,8 +676,8 @@
                                     </div>
                                     <p class="mt-1.5 text-[11px] text-ink-faint">
                                         Up to {{ round(config('attachments.max_bytes') / 1048576) }} MB each, no limit on how many.
-                                        Documents, images, video, audio, email, text and archives.
-                                        Executables and scripts are rejected.
+                                        Documents, images, video, audio, email, text, web files (HTML, CSS, JS) and archives.
+                                        Executables and system scripts are rejected.
                                     </p>
 
                                     {{-- Refused without ever being sent, so the server has no

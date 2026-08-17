@@ -74,6 +74,40 @@ return [
         'application/yaml',
 
         /*
+         * Web files — the shape an AI-generated deliverable now arrives in, either as
+         * one self-contained page or as a page split across its stylesheet and script.
+         * Without these the files get renamed to .txt by whoever is trying to share
+         * them, which loses the one property that makes them useful: that they run.
+         *
+         * These are the only allowed types a browser EXECUTES, and the reason that is
+         * acceptable is not that the content is trusted. It is that nothing renders an
+         * attachment in this app's origin: temporaryUrl() forces
+         * `Content-Disposition: attachment` on every download without exception, and the
+         * object is served from the storage origin rather than the app's, so a script in
+         * an uploaded file has no session, no cookie and no same-origin DOM to reach.
+         *
+         * What is left is a LOCAL risk, and it is real rather than theoretical: on
+         * Windows, double-clicking a downloaded .js runs it under Windows Script Host
+         * with the user's own privileges — the .html and .css cases only do something
+         * when opened in a browser, which sandboxes them. Allowing .js is therefore a
+         * deliberate narrowing of the FR-6.5 "reject scripts" rule down to scripts the
+         * SYSTEM executes, made because the files people actually need to exchange here
+         * are web assets. The compensating control is that the extension is no longer
+         * disguisable: `payload.pdf.js` is now accepted, so the filename shown in the
+         * list is the truthful one rather than a rejection.
+         *
+         * If an inline preview or a same-origin proxy is ever added for attachments,
+         * these three entries are the ones to reconsider first.
+         */
+        'text/html',
+        'text/css',
+        // Both spellings: libmagic reports application/javascript on this install, but
+        // the IANA name is text/javascript and other builds emit it. A type absent from
+        // this list is rejected outright, so guessing which one arrives is not an option.
+        'text/javascript',
+        'application/javascript',
+
+        /*
          * Email, saved out of Outlook. A forwarded vendor reply IS the artifact in a
          * procurement or incident thread, and without this the file goes back to being
          * pasted into a comment where the headers are lost.
@@ -136,10 +170,17 @@ return [
      * whatever the bytes are, and the danger is what the operating system does when a
      * colleague double-clicks the downloaded name. FR-6.5 says reject executables and
      * scripts outright, so both halves are checked.
+     *
+     * `js` is the one deliberate exception, removed from this list when web files were
+     * allowed above. Every other entry here stays: .vbs, .jse, .wsf, .wsh and .hta are
+     * the other Windows Script Host formats and have no legitimate use as attachments,
+     * and .sh/.ps1/.php/.py and friends are system and server-side scripts. See the
+     * text/javascript note above for why that one exception was worth making and what
+     * it costs.
      */
     'blocked_extensions' => [
         'exe', 'com', 'bat', 'cmd', 'msi', 'scr', 'pif', 'cpl', 'jar', 'app', 'dmg',
-        'sh', 'bash', 'zsh', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh',
+        'sh', 'bash', 'zsh', 'ps1', 'psm1', 'vbs', 'vbe', 'jse', 'wsf', 'wsh',
         'hta', 'reg', 'dll', 'sys', 'lnk', 'iso', 'img', 'php', 'phtml', 'py', 'rb', 'pl',
     ],
 

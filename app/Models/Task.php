@@ -47,4 +47,17 @@ class Task extends Model
     {
         return $this->belongsTo(User::class, 'assignee_user_id');
     }
+
+    /**
+     * Late against its due date, in the org's calendar — see Project::isOverdue()
+     * for why the comparison is date-to-date and not ->isPast(). A done task is
+     * never overdue no matter when it was ticked.
+     */
+    public function isOverdue(): bool
+    {
+        return ! $this->is_done
+            && $this->due_date !== null
+            && $this->due_date->toDateString()
+                < now(config('worktrack.default_timezone'))->toDateString();
+    }
 }

@@ -222,15 +222,26 @@ class AttachmentService
          * extension is allowed to REFINE a text/plain result — never to widen a binary one.
          *
          * That direction is the safety property, and it is why this is a match on
-         * text/plain rather than a general extension override. Every target below is
-         * itself a text format, so the worst a wrong extension achieves is mislabelling
-         * one harmless text file as another. A .exe cannot reach this branch at all: its
-         * bytes sniff as a binary type, so it never sees the map, and the filename gate
-         * in assertAllowed() rejects it a second time regardless.
+         * text/plain rather than a general extension override. Every target below is a
+         * text format, so the worst a wrong extension achieves is mislabelling one text
+         * file as another. A .exe cannot reach this branch at all: its bytes sniff as a
+         * binary type, so it never sees the map, and the filename gate in
+         * assertAllowed() rejects it a second time regardless.
          *
          * YAML and DXF are here because libmagic has no signature for either — both are
          * genuinely just text — and DXF in particular would otherwise be an allowlisted
          * type that can never actually be uploaded.
+         *
+         * HTML is here for a narrower reason: libmagic recognises a whole DOCUMENT
+         * (<!doctype html>, <html>) but reports a FRAGMENT — the "<div>…" a generated
+         * component arrives as — as plain text. Without the refinement, whether a page
+         * uploads depends on how it happens to start. It is also the one target that a
+         * browser executes rather than merely displays, so the mislabelling above is
+         * worth naming explicitly: a .txt named .html gets stored as text/html. That
+         * changes nothing here, because downloads are forced to
+         * Content-Disposition: attachment off the storage origin (see temporaryUrl and
+         * the text/html note in config/attachments.php) and nothing in this app renders
+         * an attachment inline.
          */
         if ($mime === 'text/plain') {
             $mime = match (strtolower($file->getClientOriginalExtension())) {
@@ -241,6 +252,9 @@ class AttachmentService
                 'yaml', 'yml' => 'application/yaml',
                 'dxf' => 'image/vnd.dxf',
                 'eml' => 'message/rfc822',
+                'html', 'htm' => 'text/html',
+                'css' => 'text/css',
+                'js' => 'text/javascript',
                 default => 'text/plain',
             };
         }
@@ -262,7 +276,8 @@ class AttachmentService
 
         if (! in_array($mime, config('attachments.allowed_mimes', []), true)) {
             throw new AttachmentRejected(
-                "Files of type {$mime} can't be attached. Allowed: documents, images, text and archives."
+                "Files of type {$mime} can't be attached. Allowed: documents, images, video, "
+                .'audio, email, text, web files and archives.'
             );
         }
 
