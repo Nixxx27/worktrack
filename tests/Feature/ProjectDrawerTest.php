@@ -602,6 +602,91 @@ describe('attachments on R2 (FR-6)', function () {
     });
 
     /**
+     * HTML, which arrives as a whole page from an AI tool and as a bare fragment from a
+     * component generator — and which libmagic reads differently in each case.
+     *
+     * Both are asserted because only one of them exercises the allowlist directly: the
+     * document carries a signature and sniffs as text/html, while the fragment sniffs as
+     * text/plain and reaches the allowlist only through the extension refinement in
+     * sniff(). Testing just the document would leave "whether the upload works depends on
+     * whether the file starts with <!doctype>" undetected.
+     */
+    it('accepts html whether it sniffs as a document or as plain text', function () {
+        $cases = [
+            'report.html' => "<!DOCTYPE html>\n<html><head><title>Q3</title></head><body><h1>Q3</h1></body></html>\n",
+            'widget.html' => "<div class=\"card\">\n  <p>fragment only</p>\n</div>\n",
+        ];
+
+        foreach ($cases as $filename => $contents) {
+            $file = sniffableUpload($filename, $contents);
+
+            $attachment = app(AttachmentService::class)->upload($this->project, $file, $this->member);
+
+            expect($attachment->status)->toBe('available')
+                ->and($attachment->mime_type)->toBe('text/html');
+
+            Storage::disk('r2')->assertExists($attachment->object_key);
+        }
+
+        // Guards the test itself: if libmagic ever grows a signature for the fragment,
+        // this case stops covering the refinement and the pairing above is meaningless.
+        expect(sniffableUpload('widget.html', $cases['widget.html'])->getMimeType())->toBe('text/plain');
+    });
+
+    /**
+     * The other half of a page split across files. These two travel opposite paths for
+     * the same reason as the HTML pair above: libmagic has a signature for JavaScript
+     * and none at all for CSS, so .css reaches the allowlist only via the refinement.
+     */
+    it('accepts js and css, whether or not libmagic knows the format', function () {
+        $script = app(AttachmentService::class)->upload(
+            $this->project,
+            sniffableUpload('app.js', "const x = 1;\nfunction go(){ console.log(x) }\nexport default go;\n"),
+            $this->member,
+        );
+
+        // Not a single expected value: libmagic reports application/javascript on some
+        // builds and the IANA text/javascript on others, and both are allowlisted
+        // precisely because the app cannot depend on which one the host emits.
+        expect($script->status)->toBe('available')
+            ->and($script->mime_type)->toBeIn(['application/javascript', 'text/javascript']);
+
+        $style = app(AttachmentService::class)->upload(
+            $this->project,
+            sniffableUpload('theme.css', "body { color: #111; margin: 0 }\n.card { display: flex }\n"),
+            $this->member,
+        );
+
+        expect($style->status)->toBe('available')
+            ->and($style->mime_type)->toBe('text/css');
+    });
+
+    /**
+     * Allowing web files narrowed the FR-6.5 script rule to scripts the SYSTEM executes.
+     * It must not have dissolved it. Every format here is still refused on the FILENAME,
+     * whatever its bytes sniff as — and all four of these sniff as innocent text, which
+     * is exactly why the second gate exists.
+     */
+    it('still rejects system and script-host files after web files became allowed', function () {
+        $cases = [
+            'deploy.sh' => "#!/bin/bash\nrm -rf /tmp/build\n",
+            'run.ps1' => "Get-Process | Stop-Process\n",
+            'macro.vbs' => "Set s = CreateObject(\"WScript.Shell\")\n",
+            'invoice.pdf.exe' => "harmless looking text\n",
+        ];
+
+        foreach ($cases as $filename => $contents) {
+            expect(fn () => app(AttachmentService::class)->upload(
+                $this->project,
+                sniffableUpload($filename, $contents),
+                $this->member,
+            ))->toThrow(AttachmentRejected::class);
+        }
+
+        expect(Attachment::withoutGlobalScopes()->count())->toBe(0);
+    });
+
+    /**
      * The refinement runs in ONE direction only, and that is the safety property.
      *
      * A .pdf extension on a file whose bytes are an executable must not be talked into

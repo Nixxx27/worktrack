@@ -678,8 +678,8 @@
                                     </div>
                                     <p class="mt-1.5 text-[11px] text-ink-faint">
                                         Up to {{ round(config('attachments.max_bytes') / 1048576) }} MB each, no limit on how many.
-                                        Documents, images, video, audio, email, text and archives.
-                                        Executables and scripts are rejected.
+                                        Documents, images, video, audio, email, text, web files (HTML, CSS, JS) and archives.
+                                        Executables and system scripts are rejected.
                                     </p>
 
                                     {{-- Refused without ever being sent, so the server has no
