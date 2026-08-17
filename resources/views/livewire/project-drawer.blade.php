@@ -27,6 +27,7 @@
             };
             $days = (int) $project->current_step_entered_at->diffInDays(now());
             $overdue = $project->isOverdue();
+            $workingDays = $project->workingDays();
             $initials = fn ($name) => \Illuminate\Support\Str::of($name)
                 ->explode(' ')->take(2)->map(fn ($p) => mb_substr($p, 0, 1))->implode('');
             $tabs = ['tasks' => 'Checklist', 'files' => 'Files', 'history' => 'History'];
@@ -266,8 +267,18 @@
                                     </span>
                                 </{{ $dateTag }}>
 
+                                {{-- The span in working days, because "17 Aug → 24 Aug" is a
+                                     pair of dates and not an answer to "how long is this?".
+                                     Weekends are excluded: the question being asked is how
+                                     much working time was promised, and nobody is counting
+                                     the Saturday. Suppressed when overdue, where the alarm
+                                     below it is the only number that matters. --}}
                                 @if ($overdue)
                                     <p class="mt-0.5 text-[11px] font-medium text-health-stalled">Overdue</p>
+                                @elseif ($workingDays !== null)
+                                    <p class="mt-0.5 text-[11px] text-ink-faint">
+                                        {{ $workingDays }} working {{ $workingDays === 1 ? 'day' : 'days' }}
+                                    </p>
                                 @endif
                             </div>
 

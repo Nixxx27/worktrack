@@ -141,4 +141,51 @@ class Project extends Model
             && $this->target_date->toDateString()
                 < now(config('worktrack.default_timezone'))->toDateString();
     }
+
+    /**
+     * How long the commitment runs in working days, weekends excluded.
+     *
+     * Counted INCLUSIVELY on both ends: a card promised for the Tuesday it starts
+     * on is one day of work, not zero, and "17 Aug → 24 Aug" is the six weekdays
+     * a person would count off a calendar, not the seven-day gap between them.
+     *
+     * Null rather than 0 when either end is missing, so a caller cannot print
+     * "0 working days" for a card whose span is simply unknown. A target before
+     * the start is also null: it is bad data, and inventing a negative or a zero
+     * for it only hides that.
+     *
+     * Weekends are Sat/Sun only. Holidays are not modelled anywhere in the app,
+     * so this deliberately does not pretend to know them.
+     */
+    public function workingDays(): ?int
+    {
+        if ($this->start_date === null || $this->target_date === null) {
+            return null;
+        }
+
+        $start = $this->start_date->copy()->startOfDay();
+        $end = $this->target_date->copy()->startOfDay();
+
+        if ($end->lt($start)) {
+            return null;
+        }
+
+        // Whole weeks are five days each by definition; only the leftover tail
+        // needs walking, so a multi-year span costs the same six iterations as
+        // a one-week one.
+        $totalDays = (int) $start->diffInDays($end) + 1;
+        $working = intdiv($totalDays, 7) * 5;
+
+        $day = $start->copy()->addDays(intdiv($totalDays, 7) * 7);
+
+        for ($i = $totalDays % 7; $i > 0; $i--) {
+            if (! $day->isWeekend()) {
+                $working++;
+            }
+
+            $day->addDay();
+        }
+
+        return $working;
+    }
 }
