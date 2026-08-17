@@ -208,7 +208,11 @@
                         <div class="flex flex-none flex-wrap items-start gap-x-6 gap-y-3 border-b border-line bg-canvas px-5 py-3">
                             <div>
                                 <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-faint">Members</p>
-                                <div class="mt-1.5 flex items-center gap-1">
+                                {{-- Capped and wrapping, at the same width as the name caption
+                                     below, so the block is a column of a known size. Unbounded,
+                                     a big team runs this row to 400px+ and every block after it
+                                     pays for those avatars out of its own width. --}}
+                                <div class="mt-1.5 flex max-w-56 flex-wrap items-center gap-1">
                                     {{-- Owner in royal, assignees in powder — accountable vs
                                          doing, the same pairing the card front uses, so the
                                          two colours mean one thing across the product. --}}
@@ -290,7 +294,19 @@
                                 </{{ $priorityTag }}>
                             </div>
 
-                            <div class="min-w-0 flex-1">
+                            {{-- min-w-60, NOT min-w-0. The main column is a fixed 640px — the
+                                 drawer is max-w-5xl beside a lg:w-96 feed — and members, dates
+                                 and priority can between them claim nearly all of it. min-w-0
+                                 let this block absorb the shortfall: it collapsed to a few
+                                 pixels, clipped its own heading to "LAB", and the chips, which
+                                 cannot shrink below the width of the word inside them, spilled
+                                 out over the comments panel.
+
+                                 A real minimum is what makes the row wrap instead. Flexbox
+                                 breaks a line when an item's minimum no longer fits, so Labels
+                                 drops to its own row and gets the full width there, rather than
+                                 being crushed in place. --}}
+                            <div class="min-w-60 flex-1">
                                 <p class="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-ink-faint">Labels</p>
 
                                 <div class="relative mt-1.5 flex flex-wrap items-center gap-1.5"
@@ -298,14 +314,21 @@
                                      @if ($labelPicker) x-on:click.outside="$wire.closeLabelPicker()" @endif>
 
                                     @foreach ($project->tags as $tag)
+                                        {{-- A label name may be 40 characters, which is wider than
+                                             this column ever gets. Truncating is what keeps one
+                                             long label from widening the row and pushing the whole
+                                             block over the feed again; the full name stays on the
+                                             title. The × is flex-none so it survives the squeeze —
+                                             a remove button that gets truncated away is a label
+                                             nobody can take off. --}}
                                         <span wire:key="chip-{{ $tag->id }}"
-                                              class="group inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white"
+                                              class="group inline-flex max-w-full items-center gap-1 rounded px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-white"
                                               style="background-color: {{ $tag->color ?? '#55607d' }}">
-                                            {{ $tag->name }}
+                                            <span class="min-w-0 truncate" title="{{ $tag->name }}">{{ $tag->name }}</span>
                                             @if ($canEdit)
                                                 <button wire:click="removeLabel({{ $tag->id }})"
                                                         aria-label="Remove label {{ $tag->name }}"
-                                                        class="-mr-0.5 rounded px-0.5 leading-none opacity-0 transition hover:bg-black/25 focus-visible:opacity-100 group-hover:opacity-100">&times;</button>
+                                                        class="-mr-0.5 flex-none rounded px-0.5 leading-none opacity-0 transition hover:bg-black/25 focus-visible:opacity-100 group-hover:opacity-100">&times;</button>
                                             @endif
                                         </span>
                                     @endforeach

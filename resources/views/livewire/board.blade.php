@@ -231,6 +231,18 @@
                                         'stalled' => 'bg-health-stalled-bg text-health-stalled',
                                         'on_hold' => 'bg-health-onhold-bg text-health-onhold',
                                     };
+                                    // Priority tone, same token pairs as the health flags and the
+                                    // drawer's priority chip. Urgent and high borrow the at-risk /
+                                    // stalled colours on purpose: on a board, "urgent" and "behind"
+                                    // want the same glance. Normal and low stay on the neutral
+                                    // sunken chip so the two that need attention are the two that
+                                    // carry colour.
+                                    $priorityTone = match ($project->priority) {
+                                        'urgent' => 'bg-health-stalled-bg text-health-stalled',
+                                        'high' => 'bg-health-atrisk-bg text-health-atrisk',
+                                        'low' => 'bg-canvas-sunken text-ink-faint',
+                                        default => 'bg-canvas-sunken text-ink-soft',
+                                    };
                                     $days = (int) $project->current_step_entered_at->diffInDays(now());
 
                                     $overdue = $project->isOverdue();
@@ -304,13 +316,26 @@
                                         </div>
                                     @endif
 
-                                    {{-- Health, progress and age share one line: three glances at a card,
-                                         not three rows of it, so more of the column fits on screen. --}}
-                                    <div class="tnum mt-1.5 flex items-center gap-2 font-mono text-[11px] text-ink-faint">
+                                    {{-- Health, priority, progress and age share one line: four glances
+                                         at a card, not four rows of it, so more of the column fits on
+                                         screen. gap-x/gap-y because the pair of chips wraps before the
+                                         counts do in a narrow column. --}}
+                                    <div class="tnum mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-ink-faint">
                                         {{-- The word is part of the flag, not a tooltip: colour
                                              alone must never be the carrier of a state. --}}
                                         <span class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider {{ $tone }}">
                                             {{ str_replace('_', ' ', $project->health->value) }}
+                                        </span>
+
+                                        {{-- Priority reads next to health, never alone: "at risk" and
+                                             "urgent" answer different questions, and the pair is what
+                                             tells you which card to pick up first. Shown on every card,
+                                             including normal — a chip that only appears when it is high
+                                             makes its absence ambiguous, since you cannot tell a normal
+                                             card from one nobody has triaged. --}}
+                                        <span class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider {{ $priorityTone }}"
+                                              title="Priority: {{ $project->priority }}">
+                                            {{ $project->priority }}
                                         </span>
                                         @if ($project->tasks_total)
                                             <span title="{{ $project->tasks_done }} of {{ $project->tasks_total }} tasks done">

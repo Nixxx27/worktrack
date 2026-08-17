@@ -138,6 +138,50 @@ describe('creating a project', function () {
     });
 });
 
+describe('what a card says without being opened', function () {
+
+    it('shows the priority on every card, not only the loud ones', function () {
+        // A chip that only renders for urgent/high makes its absence ambiguous: a
+        // normal card and an untriaged one would look identical. The whole point of
+        // putting it on the card front is deciding what to pick up without opening
+        // anything, so all four values render.
+        SystemContext::run(fn () => $this->itProject->update(['priority' => 'normal']));
+
+        $urgent = app(ProjectService::class)->create(
+            $this->itTracker, ['name' => 'Core switch down', 'priority' => 'urgent'], $this->admin);
+
+        asUser($this->member)->test(Board::class)
+            ->assertSeeHtml('title="Priority: normal"')
+            ->assertSeeHtml('title="Priority: urgent"');
+
+        expect($urgent->priority)->toBe('urgent');
+    });
+
+    it('colours urgent and high so they are found by glance, and leaves the rest neutral', function () {
+        // The tones are the health tokens on purpose — on a board, "urgent" and
+        // "behind" want the same glance. Neutral for normal/low is what keeps that
+        // glance meaningful.
+        //
+        // The card's health stays on_track throughout, so a stalled or at-risk tone
+        // can only have come from the priority chip. That is what makes asserting the
+        // class fragment meaningful here rather than tautological.
+        $tones = [
+            'urgent' => 'bg-health-stalled-bg text-health-stalled',
+            'high' => 'bg-health-atrisk-bg text-health-atrisk',
+            'low' => 'bg-canvas-sunken text-ink-faint',
+            'normal' => 'bg-canvas-sunken text-ink-soft',
+        ];
+
+        foreach ($tones as $priority => $tone) {
+            SystemContext::run(fn () => $this->itProject->update(['priority' => $priority]));
+
+            asUser($this->member)->test(Board::class)
+                ->assertSeeHtml('tracking-wider '.$tone)
+                ->assertSeeHtml('title="Priority: '.$priority.'"');
+        }
+    });
+});
+
 describe('moving a card', function () {
 
     it('records the move when an admin drops it', function () {
