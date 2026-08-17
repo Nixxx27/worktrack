@@ -886,7 +886,10 @@
                                                 </div>
                                             </form>
                                         @else
-                                            <p class="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-ink-soft">{{ $comment->body }}</p>
+                                            {{-- break-words, because a pasted link is one unbreakable
+                                                 "word" and without it the URL runs straight out of the
+                                                 card and over the drawer's edge. --}}
+                                            <p class="mt-1.5 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-ink-soft">{{ $comment->body }}</p>
 
                                             <div class="mt-1 flex items-center gap-1">
                                                 @can('update', $comment)
@@ -912,7 +915,7 @@
                                         <span class="mt-0.5 grid size-5 flex-none place-items-center rounded-full bg-canvas-sunken text-[9px] font-semibold text-ink-soft">
                                             {{ $entry->user ? $initials($entry->user->name) : '·' }}
                                         </span>
-                                        <p class="min-w-0 flex-1 text-[13px] leading-snug text-ink-soft">
+                                        <p class="min-w-0 flex-1 wrap-break-word text-[13px] leading-snug text-ink-soft">
                                             <span class="font-medium text-ink">{{ $entry->user?->name ?? 'System' }}</span>
                                             {{ $entry->describe() }}
                                             <time class="{{ $repeated ? 'sr-only' : 'block' }} font-mono text-[11px] text-ink-faint"
