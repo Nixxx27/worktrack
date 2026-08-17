@@ -117,4 +117,28 @@ class Project extends Model
     {
         return $this->movements()->whereNull('exited_at')->first();
     }
+
+    /**
+     * Late against the promised date, in the org's calendar.
+     *
+     * Two traps live here, which is why the board, the drawer and anything else
+     * asking the question must call this rather than re-deriving it.
+     *
+     * target_date is a bare date, so its Carbon is midnight in app.timezone (UTC).
+     * ->isPast() therefore turns true at 08:00 Manila *on the due day itself* and
+     * paints a card red through the whole working day it was promised for. The
+     * comparison has to be date-to-date in the org timezone (NFR-U5), matching
+     * MetricsRepository::deadlines(); Y-m-d strings order correctly, so comparing
+     * them keeps one rule with no instant arithmetic to get wrong.
+     *
+     * Overdue is also only asked of a card still in flight. A finished project
+     * that was late is a fact for the report, not a red flag on the board.
+     */
+    public function isOverdue(): bool
+    {
+        return $this->target_date !== null
+            && $this->current_step_type !== StepType::Terminal
+            && $this->target_date->toDateString()
+                < now(config('worktrack.default_timezone'))->toDateString();
+    }
 }

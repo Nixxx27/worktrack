@@ -233,12 +233,7 @@
                                     };
                                     $days = (int) $project->current_step_entered_at->diffInDays(now());
 
-                                    // Overdue is computed against the due date only while the
-                                    // card is still in flight. A finished project that was late
-                                    // is a fact for the report, not a red flag on the board.
-                                    $overdue = $project->target_date
-                                        && $project->current_step_type->value !== 'terminal'
-                                        && $project->target_date->isPast();
+                                    $overdue = $project->isOverdue();
 
                                     $initials = fn ($name) => \Illuminate\Support\Str::of($name)
                                         ->explode(' ')->take(2)->map(fn ($p) => mb_substr($p, 0, 1))->implode('');
