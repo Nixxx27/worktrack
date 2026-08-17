@@ -40,7 +40,11 @@
 <header class="sticky top-0 z-20 flex-none bg-royal-900 text-ink-inverse shadow-sm">
     <div class="flex flex-wrap items-center gap-x-5 gap-y-2 px-5 py-2.5">
         <a href="{{ route('board') }}" class="flex items-center gap-2.5">
-            <span class="grid size-7 flex-none place-items-center rounded-lg bg-powder-300 text-[13px] font-bold text-royal-900">W</span>
+            {{-- The clipboard head rather than the full mascot, for the same reason the favicon
+                 uses it: at 28px the running figure is a smudge. The plate is bone-50 so the
+                 mark keeps its contrast against the royal header, and matches the app icon. --}}
+            <img src="{{ asset('images/worktrack-icon.png') }}" alt="" width="205" height="256"
+                 class="size-7 flex-none rounded-lg bg-bone-50 object-contain p-0.5">
             <span class="flex items-baseline gap-2">
                 <span class="font-semibold tracking-tight">Worktrack</span>
                 @if ($eyebrow)

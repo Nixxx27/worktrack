@@ -7,9 +7,10 @@
 
         <div class="relative w-full max-w-md">
             <div class="mb-8 text-center">
-                <span class="mb-3 inline-flex size-10 items-center justify-center rounded-xl bg-royal-900 text-sm font-semibold text-ink-inverse">
-                    W
-                </span>
+                {{-- The one place the full mascot gets to appear: signed-out pages have the room,
+                     and the character is the point of the brand. Everywhere else is the icon. --}}
+                <img src="{{ asset('images/worktrack-mark.png') }}" alt="" width="375" height="512"
+                     class="mx-auto mb-3 h-20 w-auto">
                 <p class="text-lg font-semibold tracking-tight text-ink">Worktrack</p>
                 <p class="mt-1 font-mono text-[11px] uppercase tracking-[0.12em] text-ink-faint">
                     {{ config('worktrack.org_label') }}
