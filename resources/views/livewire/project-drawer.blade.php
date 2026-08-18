@@ -469,8 +469,8 @@
                                  x-data="{ expanded: false, clipped: false }"
                                  x-init="$nextTick(() => clipped = $refs.body.scrollHeight > $refs.body.clientHeight + 1)">
                                 <p x-ref="body"
-                                   class="whitespace-pre-wrap text-sm leading-relaxed text-ink-soft"
-                                   x-bind:class="expanded ? '' : 'line-clamp-3'">{{ $project->description }}</p>
+                                   class="linked-text whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-ink-soft"
+                                   x-bind:class="expanded ? '' : 'line-clamp-3'">{{ \App\Support\Linkify::text($project->description) }}</p>
 
                                 {{-- Only offered when there is in fact more to see, so a
                                      one-line description does not grow a dead control. --}}
@@ -900,8 +900,13 @@
                                         @else
                                             {{-- break-words, because a pasted link is one unbreakable
                                                  "word" and without it the URL runs straight out of the
-                                                 card and over the drawer's edge. --}}
-                                            <p class="mt-1.5 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-ink-soft">{{ $comment->body }}</p>
+                                                 card and over the drawer's edge.
+
+                                                 Linkify::text() returns an HtmlString, so this stays a
+                                                 normal escaped echo: the only markup in it is the anchor
+                                                 the helper wrote, and every piece of what the author
+                                                 typed went through e() first. --}}
+                                            <p class="linked-text mt-1.5 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-ink-soft">{{ \App\Support\Linkify::text($comment->body) }}</p>
 
                                             <div class="mt-1 flex items-center gap-1">
                                                 @can('update', $comment)

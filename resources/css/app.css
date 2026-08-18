@@ -122,6 +122,23 @@
 }
 
 /*
+ * Links found inside free text somebody typed — comment bodies and card
+ * descriptions, marked up by App\Support\Linkify. The helper writes a bare <a> and
+ * knows nothing about the palette, which is the right split: every token reference
+ * in this app lives in this file, and a support class that hardcoded royal-800
+ * would be the one place a palette change could not reach.
+ */
+.linked-text a {
+    color: var(--color-royal-800);
+    text-decoration-line: underline;
+    text-underline-offset: 2px;
+}
+
+.linked-text a:hover {
+    color: var(--color-royal-900);
+}
+
+/*
  * Inputs that grow to fit their content, used by the inline step-rename fields.
  * field-sizing is not universal yet, so the `size` attribute remains the fallback.
  */
