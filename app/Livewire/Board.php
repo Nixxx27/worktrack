@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Projects\ProjectService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Livewire\Attributes\Computed;
@@ -118,6 +119,23 @@ class Board extends Component
     #[Url(as: 'due_to', except: '')]
     public string $dueTo = '';
 
+    // ── FR-3.10 · sort ──────────────────────────────────────────────────────────
+    //
+    // NOT one of the filters, and deliberately absent from self::FILTERS. A filter
+    // hides cards; a sort only reorders the ones already there. Folding it in would
+    // light up the "N of M" count and the Clear button over a board hiding nothing,
+    // and make "Clear filters" reset an order nobody asked it to touch.
+    //
+    // #[Url] for the same reason every filter has one: "look at what I am looking at"
+    // should be a pasted link, and a column read due-date-first is exactly the kind of
+    // view someone wants to hand over.
+    //
+    // Empty means MANUAL — board_position ascending, the order drag-and-drop writes —
+    // and it is the default because it is the only order a person can author. Under any
+    // other, a drag within a column has nothing left to express (FR-3.5).
+    #[Url(as: 'sort', except: '')]
+    public string $sort = '';
+
     public function mount(?string $tracker = null): void
     {
         // Scoped: a public_id from an invisible tracker simply does not resolve.
@@ -214,13 +232,120 @@ class Board extends Component
         // Reads the denormalized columns only — no per-card subqueries, so the board
         // stays one indexed range scan at the 500-card target (NFR-P1).
         return $this->filtered()
+            // board_position ascending WHATEVER the chosen sort, because it is the one
+            // order idx_projects_board (tracker_id, archived_at, step_id, board_position)
+            // can walk without a filesort. FR-3.10 reorders the fetched cards in PHP
+            // instead — see sortCards() for why that is the cheaper half of the trade.
             ->orderBy('board_position')
             // Eager-loaded, not per-card: the card front shows owner, assignees and
             // tags, and lazy-loading them would be 3 queries × 500 cards against the
             // one-indexed-range-scan budget NFR-P1 sets for this screen.
             ->with(['owner:id,name', 'assignees:id,name', 'tags:id,name,color'])
             ->get()
-            ->groupBy('step_id');
+            ->groupBy('step_id')
+            ->map(fn (Collection $cards) => $this->sortCards($cards));
+    }
+
+    /**
+     * FR-3.10 — one column's cards in the chosen order.
+     *
+     * IN PHP RATHER THAN IN SQL, and both halves of that are deliberate:
+     *
+     *   - An ORDER BY on any of these columns forfeits idx_projects_board, turning the
+     *     board's single indexed range scan into a filesort. A column is at most a few
+     *     hundred rows of a collection already in memory, so sorting it here costs
+     *     nothing measurable and NFR-P1's budget stays exactly as it was measured.
+     *   - A per-column order cannot be expressed in one query at all. Nothing asks for
+     *     that today — the control is board-wide — but doing it here means the day it
+     *     does, it is a different comparator per group and not a query per column.
+     *
+     * No explicit tie-break: PHP's sorts have been stable since 8.0, so cards the
+     * comparator calls equal keep the order they arrived in — which is board_position
+     * ascending, straight from the query. That matters more than it sounds. Two cards
+     * created in the same second (a seeded import, a bulk paste) would otherwise be
+     * free to swap places between renders, and a board that reshuffles when nothing
+     * happened reads as a board that has lost track of the work.
+     *
+     * @param  Collection<int, Project>  $cards
+     * @return Collection<int, Project>
+     */
+    private function sortCards(Collection $cards): Collection
+    {
+        $comparisons = match ($this->sortKey) {
+            'newest' => [fn (Project $a, Project $b) => $b->created_at <=> $a->created_at],
+            'oldest' => [fn (Project $a, Project $b) => $a->created_at <=> $b->created_at],
+
+            // last_activity_at, not updated_at. It is NOT NULL and written by the
+            // activity recorder, so it means "someone did something to this work" —
+            // where updated_at also moves for a denormalized counter nobody touched.
+            'activity' => [fn (Project $a, Project $b) => $b->last_activity_at <=> $a->last_activity_at],
+
+            // Undated cards SINK. target_date stays nullable by FR-4.1, so a column
+            // holding some is the normal case, not the edge one — and a plain ascending
+            // sort puts NULL first, which would stack every card nobody has committed
+            // to above the one due tomorrow. The first comparator is the nulls-last
+            // pass: false <=> true is -1, so a dated card outranks an undated one.
+            'due' => [
+                fn (Project $a, Project $b) => ($a->target_date === null) <=> ($b->target_date === null),
+                fn (Project $a, Project $b) => $a->target_date <=> $b->target_date,
+            ],
+
+            // Manual — the query already returned board_position ascending, so there is
+            // nothing to do and no sort to pay for.
+            default => [],
+        };
+
+        return $comparisons === [] ? $cards : $cards->sortBy($comparisons)->values();
+    }
+
+    /**
+     * The orders a column can be read in, as the control lists them.
+     *
+     * Here rather than in the template for the same reason healthOptions() is: a
+     * hand-written copy of the list in the view is a second place to forget when a key
+     * is added, and this map is also the allowlist sortKey() validates against.
+     *
+     * @return array<string, string>
+     */
+    #[Computed]
+    public function sortOptions(): array
+    {
+        return [
+            '' => 'Manual order',
+            'newest' => 'Recently added',
+            'activity' => 'Recent activity',
+            'oldest' => 'Oldest first',
+            'due' => 'Due date',
+        ];
+    }
+
+    /**
+     * The sort as the board actually applies it.
+     *
+     * Validated at READ, exactly like $this->selected and for the same two reasons: a
+     * truncated `?sort=` in a forwarded link, and a tampered payload on every request
+     * after the first. Anything unrecognised degrades to the manual board — the same
+     * rule FR-3.6 sets for a malformed filter, and the honest answer here too, because
+     * the alternative is a column in an order the control claims it is not in.
+     */
+    #[Computed]
+    public function sortKey(): string
+    {
+        return array_key_exists($this->sort, $this->sortOptions) ? $this->sort : '';
+    }
+
+    /**
+     * Is the board in the order drag-and-drop writes?
+     *
+     * Read in three places, which is the point of naming it: the control styles itself
+     * from it, the column hands it to Sortable, and moveProject re-checks it before
+     * trusting a drop position. A card's position within a column only means something
+     * when the DOM order IS board_position order.
+     */
+    #[Computed]
+    public function manualOrder(): bool
+    {
+        return $this->sortKey === '';
     }
 
     /**
@@ -455,6 +580,14 @@ class Board extends Component
         if (in_array(strtok($property, '.'), self::FILTERS, true)) {
             $this->forgetFilterCaches();
         }
+
+        // Separately, because sort is not a filter. Rolling 'sort' into FILTERS would
+        // have got this line for free and three wrong behaviours with it: clearFilters()
+        // would reset the order, clearFilter() would expose it as a per-control reset,
+        // and hasFilters() would claim cards were hidden when none were.
+        if ($property === 'sort') {
+            $this->forgetSortCaches();
+        }
     }
 
     public function switchTracker(string $publicId): void
@@ -501,6 +634,27 @@ class Board extends Component
     private function forgetFilterCaches(): void
     {
         unset($this->steps, $this->projects, $this->totalCards, $this->shownCards, $this->hasFilters, $this->selected);
+    }
+
+    /**
+     * A sort invalidates the card list and nothing else.
+     *
+     * Not totalCards or shownCards: reordering a column cannot change how many cards are
+     * in it, and forgetting the counts here would only make this path look
+     * interchangeable with the filter one when it is not.
+     *
+     * HONEST NOTE ON WHY THIS EXISTS. Livewire applies property updates before it
+     * renders, and every computed here is read for the first time during render — so on
+     * today's code path there is nothing stale to forget, and deleting this method
+     * breaks no test. It is kept for two reasons: it mirrors forgetFilterCaches(), which
+     * IS load-bearing (switchTracker mutates state and then reads computeds in the same
+     * request), and the day sort acquires an action of that shape the absence would be a
+     * silently stale board rather than an error. Cheap insurance, documented as
+     * insurance rather than left to read as a guard that is holding something up.
+     */
+    private function forgetSortCaches(): void
+    {
+        unset($this->projects, $this->sortKey, $this->manualOrder);
     }
 
     /**
@@ -563,6 +717,28 @@ class Board extends Component
 
         Gate::authorize('move', $project);
 
+        // FR-3.10 — a reorder inside a sorted column is not expressible, so nothing is
+        // written.
+        //
+        // The column is ordered by a date, not by hand: there is no position in it for a
+        // drag to mean. Appending would be worse than doing nothing, because it would
+        // rewrite the board_position the user gets back the moment they switch the sort
+        // off — scrambling the manual order to record a gesture the sort then ignores.
+        //
+        // Forgetting the cached cards is the whole effect: the optimistic drag already
+        // moved the card client-side, and re-rendering from the database is what undoes
+        // it — the same mechanism a refused drop uses. The browser declines to send this
+        // call at all, but moveProject is a server action and its arguments come from
+        // the client.
+        //
+        // Cross-column drops fall through: entering a different step is never cosmetic,
+        // and a card arriving somewhere new has no position there to preserve.
+        if (! $this->manualOrder && $project->step_id === $step->id) {
+            unset($this->projects);
+
+            return;
+        }
+
         // The due-date gate, BEFORE anything is written.
         //
         // Order is not stylistic. MovementRecorder::recordMove resets the step clock
@@ -589,7 +765,17 @@ class Board extends Component
             return;
         }
 
-        $projects->move($project, $step, auth()->user(), $this->resolveDropPosition($step->id, $afterProjectId, $projects));
+        // Under a sort, $afterProjectId is "the card the cursor left this one under" read
+        // from a DOM ordered by a date — an arbitrary neighbour whose board_position is
+        // not adjacent to anything. Midpointing between it and its successor would write
+        // a position the sort then ignores, so the card appends instead and the sort
+        // decides where it renders. In manual order the DOM order IS board_position
+        // order, and the drop means exactly what it looks like.
+        $position = $this->manualOrder
+            ? $this->resolveDropPosition($step->id, $afterProjectId, $projects)
+            : null;
+
+        $projects->move($project, $step, auth()->user(), $position);
 
         unset($this->projects);
     }

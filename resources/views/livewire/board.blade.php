@@ -139,6 +139,37 @@
                            class="w-32 border-0 bg-transparent p-0 text-sm focus:outline-none">
                 </div>
 
+                {{-- FR-3.10 — sort. Beside the filters because it answers the same
+                     kind of question, but deliberately NOT one of them: it reorders
+                     what is shown and never hides any of it, so it sits outside
+                     "Clear filters" and outside the "N of M" count.
+
+                     A native <select>, not the checkbox menu the filters use. That menu
+                     exists because a control holding several values has to say which
+                     ones without being opened; a single-value control already does, and
+                     the tracker switcher in the header set the precedent.
+
+                     Carries its applied state in its own styling, same as the filter
+                     triggers: a quiet control with something switched on has to look
+                     different from one without, or the only signal left is text that
+                     reads as a label. --}}
+                <div class="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 {{ $this->manualOrder ? 'border-line-strong bg-surface' : 'border-royal-600 bg-powder-200' }}">
+                    <label for="board-sort" class="text-[11px] font-medium {{ $this->manualOrder ? 'text-ink-faint' : 'text-royal-900' }}">Sort</label>
+                    <select id="board-sort"
+                            wire:model.live="sort"
+                            aria-label="Sort cards within each column"
+                            class="border-0 bg-transparent p-0 text-sm focus:outline-none {{ $this->manualOrder ? 'text-ink' : 'font-medium text-royal-900' }}">
+                        @foreach ($this->sortOptions as $value => $label)
+                            {{-- Marked server-side as well as by wire:model, like the
+                                 filter checkboxes: a board opened from a shared link
+                                 renders sorted before Livewire hydrates, and a control
+                                 reading "Manual order" over a due-date-ordered column
+                                 for that half-second reads as a bug. --}}
+                            <option value="{{ $value }}" @selected($value === $this->sortKey)>{{ $label }}</option>
+                        @endforeach
+                    </select>
+                </div>
+
                 @if ($this->hasFilters)
                     <span class="tnum font-mono text-[11px] text-ink-faint">
                         {{ $this->shownCards }} of {{ $this->totalCards }}
@@ -181,7 +212,14 @@
 
                     {{-- Columns share the width instead of huddling at the left on a wide
                          monitor, but stop growing before cards get uncomfortably long to read. --}}
-                    <section class="flex min-w-62 max-w-95 flex-1 basis-67 flex-col rounded-xl bg-canvas-sunken p-2 ring-1 ring-line">
+                    {{-- data-manual-order is read by the drag handler at drop time, and
+                         it lives HERE rather than on the Sortable element below because
+                         that element carries wire:ignore.self: its own attributes are
+                         never re-morphed, so a value written there would still say
+                         "manual" long after the sort was switched on. This <section> is
+                         morphed like any other element, so it stays true. --}}
+                    <section class="flex min-w-62 max-w-95 flex-1 basis-67 flex-col rounded-xl bg-canvas-sunken p-2 ring-1 ring-line"
+                             data-manual-order="{{ $this->manualOrder ? '1' : '0' }}">
                         <div class="mb-1.5 flex flex-none items-center justify-between px-1">
                             <span class="flex items-center gap-2 text-sm font-semibold text-ink">
                                 <i class="size-1.5 rounded-full {{ $dot }}"></i>{{ $step->name }}
