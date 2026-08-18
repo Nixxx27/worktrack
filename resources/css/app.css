@@ -125,17 +125,32 @@
  * Links found inside free text somebody typed — comment bodies and card
  * descriptions, marked up by App\Support\Linkify. The helper writes a bare <a> and
  * knows nothing about the palette, which is the right split: every token reference
- * in this app lives in this file, and a support class that hardcoded royal-800
- * would be the one place a palette change could not reach.
+ * in this app lives in this file, and a support class that hardcoded a blue would be
+ * the one place a palette change could not reach.
+ *
+ * royal-700 rather than the royal-800 the rest of the chrome uses, and the reason is
+ * the BACKGROUND this particular link sits on: text-ink-soft prose. Against #55607d
+ * the deeper navy reads as "slightly darker text" and a reader has no way to know it
+ * is clickable until the cursor happens to cross it. #2a45a0 on white is 8.4:1, still
+ * unmistakably a link at 13px, and — with the underline — carries the affordance in
+ * two channels rather than in colour alone, which is the NFR-A rule everywhere else
+ * in this file.
+ *
+ * Tailwind's preflight is why both properties are stated: it resets anchors to
+ * `color: inherit; text-decoration: inherit`, so an <a> with no rule of its own is
+ * invisible as a link rather than browser-blue and underlined.
  */
 .linked-text a {
-    color: var(--color-royal-800);
+    color: var(--color-royal-700);
     text-decoration-line: underline;
+    text-decoration-thickness: from-font;
     text-underline-offset: 2px;
 }
 
-.linked-text a:hover {
+.linked-text a:hover,
+.linked-text a:focus-visible {
     color: var(--color-royal-900);
+    text-decoration-thickness: 2px;
 }
 
 /*
