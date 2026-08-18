@@ -43,6 +43,20 @@ function drawerAs(User $user)
 }
 
 /**
+ * One activity row the rail will actually render, and the line it renders as.
+ *
+ * 'created' and 'step_move' no longer appear in the rail — the History tab carries them
+ * with their origin step and durations — so a test that wants to SEE the trail has to
+ * make something the trail still speaks about. A field edit is the smallest such thing.
+ */
+const TRAIL_LINE = 'edited the priority';
+
+function trailEntry(Project $project, User $actor): void
+{
+    app(ProjectService::class)->update($project, ['priority' => 'high'], $actor);
+}
+
+/**
  * An upload whose MIME type is read from its BYTES, which UploadedFile::fake() cannot do.
  *
  * Illuminate\Http\Testing\File::getMimeType() returns `MimeType::from($this->name)` — the
@@ -1201,11 +1215,12 @@ describe('the comments and activity rail', function () {
 
     it('interleaves comments with the activity trail', function () {
         app(CommentService::class)->create($this->project, 'Vendor confirmed the window.', $this->colleague);
+        trailEntry($this->project, $this->admin);
 
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
             ->assertSee('Vendor confirmed the window.')
-            ->assertSee('created this project');
+            ->assertSee(TRAIL_LINE);
     });
 
     // A comment writes a 'comment' activity row as well as the comment itself. If the
@@ -1227,29 +1242,33 @@ describe('the comments and activity rail', function () {
     // opens on the whole record and hiding it is the thing you ask for.
     it('opens with the trail already showing', function () {
         app(CommentService::class)->create($this->project, 'Vendor confirmed the window.', $this->colleague);
+        trailEntry($this->project, $this->admin);
 
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
             ->assertSet('showActivity', true)
             ->assertSee('Vendor confirmed the window.')
-            ->assertSee('created this project');
+            ->assertSee(TRAIL_LINE);
     });
 
     it('still collapses to the comments alone when asked', function () {
         app(CommentService::class)->create($this->project, 'Vendor confirmed the window.', $this->colleague);
+        trailEntry($this->project, $this->admin);
 
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
             ->call('toggleActivity')
             ->assertSet('showActivity', false)
             ->assertSee('Vendor confirmed the window.')
-            ->assertDontSee('created this project');
+            ->assertDontSee(TRAIL_LINE);
     });
 
     // The point of persisting it. A default nobody can escape without re-escaping it on
     // every refresh is not a preference, and the noisy-card case the old default was
     // protecting is exactly the one that needs the choice to hold.
     it('remembers the trail was hidden, across a fresh page load', function () {
+        trailEntry($this->project, $this->admin);
+
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
             ->call('toggleActivity')
@@ -1259,10 +1278,12 @@ describe('the comments and activity rail', function () {
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
             ->assertSet('showActivity', false)
-            ->assertDontSee('created this project');
+            ->assertDontSee(TRAIL_LINE);
     });
 
     it('remembers the trail was shown again, across a fresh page load', function () {
+        trailEntry($this->project, $this->admin);
+
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
             ->call('toggleActivity')
@@ -1272,7 +1293,69 @@ describe('the comments and activity rail', function () {
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
             ->assertSet('showActivity', true)
-            ->assertSee('created this project');
+            ->assertSee(TRAIL_LINE);
+    });
+
+    // The rail and the History tab were telling the same story side by side. The tab
+    // renders every movement from project_step_movements with the origin step and how
+    // long the previous one held the card; the rail repeated it with neither, so the
+    // duplicate was also the poorer copy. Same rule as comments: one event, one line,
+    // shown wherever it reads best.
+    it('does not repeat a step move as an activity line', function () {
+        $step = SystemContext::run(fn () => Step::where('tracker_id', $this->itTracker->id)
+            ->orderByDesc('position')->firstOrFail());
+        app(ProjectService::class)->move($this->project, $step, $this->colleague);
+
+        $drawer = drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->assertSet('showActivity', true)
+            ->assertDontSee('moved it to')
+            ->assertDontSee('created this project');
+
+        expect($drawer->instance()->feed->where('kind', 'activity')->pluck('entry')->pluck('type'))
+            ->not->toContain('step_move')
+            ->not->toContain('created');
+    });
+
+    // ...and nothing left the system, only the rail. Both events are still on the tab,
+    // which is the copy that carries the durations.
+    it('still tells the whole movement story on the history tab', function () {
+        $step = SystemContext::run(fn () => Step::where('tracker_id', $this->itTracker->id)
+            ->orderByDesc('position')->firstOrFail());
+        app(ProjectService::class)->move($this->project, $step, $this->colleague);
+
+        drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->call('setTab', 'history')
+            ->assertSee('Movement history')
+            ->assertSee($step->name)
+            ->assertSee('still here')
+            ->assertSeeInOrder(['#2', '#1']);
+    });
+
+    // The trail is capped at 50 rows, and dropping the hidden types in SQL rather than
+    // after the fetch is what keeps that cap meaningful. Filter in PHP and a card dragged
+    // across the board sixty times spends the entire budget on rows nobody renders: the
+    // one edit that matters falls off the end of a trail that still looks full.
+    it('spends its 50-row budget on lines it will actually show', function () {
+        trailEntry($this->project, $this->admin);
+
+        DB::table('project_activities')->insert(
+            collect(range(1, 60))->map(fn () => [
+                'tracker_id' => $this->itTracker->id,
+                'project_id' => $this->project->id,
+                'user_id' => $this->colleague->id,
+                'type' => 'step_move',
+                'payload' => json_encode(['to_step_name' => 'Testing']),
+                'counts_as_activity' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ])->all()
+        );
+
+        drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->assertSee(TRAIL_LINE);
     });
 });
 

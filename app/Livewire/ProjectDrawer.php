@@ -99,9 +99,11 @@ class ProjectDrawer extends Component
      * ON by default, and remembered. This started OFF on the reasoning that the trail
      * is generated while comments are written, so the trail always wins on volume and
      * buries the remarks that carry the actual state of the work. True, but it costs
-     * the wrong thing: what a card has BEEN THROUGH — moved, reprioritised, reassigned
-     * — is most of why anyone opens the drawer, and a default that hides it makes the
-     * common reading a click away while protecting a minority of noisy cards.
+     * the wrong thing: what a card has BEEN THROUGH — reprioritised, reassigned,
+     * retagged, rescheduled — is most of why anyone opens the drawer, and a default that
+     * hides it makes the common reading a click away while protecting a minority of noisy
+     * cards. The noisiest source is no longer in here anyway: step moves belong to the
+     * History tab now (FEED_HIDDEN_TYPES), which is what makes on-by-default cheap.
      *
      * #[Session] is what makes the default survivable in both directions. Whichever
      * way a person sets it, it stays set across reloads instead of springing back on
@@ -289,25 +291,50 @@ class ProjectDrawer extends Component
             : collect();
     }
 
+    /**
+     * Activity types the trail never renders, because this screen already says it better.
+     *
+     * 'comment' and 'comment_edited' are dropped because the comment itself is right there
+     * in the same column: one remark would appear twice, once as itself and once as a line
+     * reporting that it happened. 'comment_deleted' STAYS — with the comment gone, that row
+     * is the only remaining trace that something was said and then removed.
+     *
+     * 'created' and 'step_move' go for the same reason against a different panel. The
+     * History tab renders every one of them from project_step_movements, with the
+     * origin step and how long the previous one held the project; the trail's version has
+     * neither, so the two were the same events told twice and worse on this side. Only the
+     * DISPLAY was doubled — the tables stay separate on purpose: project_step_movements is
+     * the source of truth for every metric (FR-4.8) with a duration the database generates,
+     * while this table is a narrative that also carries edits, tags, tasks and files.
+     */
+    private const FEED_HIDDEN_TYPES = ['comment', 'comment_edited', 'created', 'step_move'];
+
+    /**
+     * The trail, newest first, already narrowed to what the column will show.
+     *
+     * The filter belongs in SQL rather than after the fetch so the 50-row budget buys 50
+     * lines that actually render. Rejecting in PHP would let a card dragged across the
+     * board thirty times spend most of that budget on step_move rows and then throw them
+     * away, leaving a trail that looks mysteriously short.
+     */
     #[Computed]
     public function activities()
     {
         $project = $this->project;
 
         return $project
-            ? $project->activities()->with('user:id,name')->latest('id')->limit(50)->get()
+            ? $project->activities()
+                ->whereNotIn('type', self::FEED_HIDDEN_TYPES)
+                ->with('user:id,name')
+                ->latest('id')->limit(50)->get()
             : collect();
     }
 
     /**
      * Comments and activity as ONE reverse-chronological column.
      *
-     * A comment already writes a 'comment' activity row, so that type is dropped here
-     * or every remark would appear twice — once as itself and once as a line saying
-     * it happened. 'comment_edited' goes the same way: the comment carries its own
-     * "edited" marker, and a trail entry for it adds nothing a reader can act on.
-     * 'comment_deleted' STAYS, because with the comment gone that row is the only
-     * remaining trace that something was said and then removed.
+     * Nothing is filtered here: activities() has already dropped the types this screen
+     * shows elsewhere (see FEED_HIDDEN_TYPES), so one place decides what the trail says.
      *
      * @return Collection<int, array{kind: string, key: string, at: Carbon, comment?: Comment, entry?: ProjectActivity}>
      */
@@ -324,7 +351,6 @@ class ProjectDrawer extends Component
         if ($this->showActivity) {
             $items = $items->concat(
                 $this->activities
-                    ->reject(fn ($entry) => in_array($entry->type, ['comment', 'comment_edited'], true))
                     ->map(fn ($entry) => [
                         'kind' => 'activity',
                         'key' => 'activity-'.$entry->id,
