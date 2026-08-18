@@ -12,7 +12,7 @@
 @endif
 
 @if (! empty($p['due_date']))
-Due {{ \Illuminate\Support\Carbon::parse($p['due_date'])->format('j M Y') }}.
+Due {{ \App\Support\Duration::dayDate(\Illuminate\Support\Carbon::parse($p['due_date'])) }}.
 @endif
 @isset($p['assigned_by'])
 Assigned by {{ $p['assigned_by'] }}.

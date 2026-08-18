@@ -1,3 +1,4 @@
+@php use App\Support\Duration; @endphp
 {{--
     The board. Columns are the tracker's steps; cards are projects.
 
@@ -379,8 +380,8 @@
 
                                             @if ($project->target_date)
                                                 <span class="tnum ml-auto font-mono {{ $overdue ? 'font-semibold text-health-stalled' : 'text-ink-faint' }}"
-                                                      title="Due {{ $project->target_date->toFormattedDateString() }}">
-                                                    {{ $overdue ? 'overdue · ' : 'due ' }}{{ $project->target_date->format('j M') }}
+                                                      title="Due {{ Duration::dayDate($project->target_date) }}">
+                                                    {{ $overdue ? 'overdue · ' : 'due ' }}{{ Duration::shortDayDate($project->target_date) }}
                                                 </span>
                                             @endif
                                         </div>

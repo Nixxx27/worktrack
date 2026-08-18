@@ -19,7 +19,7 @@
 
 @foreach ($events as $event)
 @if ($multiple)
-_{{ $event['occurred_at']->format('j M Y, H:i') }}_
+_{{ \App\Support\Duration::dayDate($event['occurred_at']) }}, {{ $event['occurred_at']->format('H:i') }}_
 @endif
 
 @include(\App\Mail\WorktrackNotification::viewFor($event['type']), ['e' => $event, 'p' => $event['payload']])

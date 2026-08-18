@@ -65,6 +65,33 @@ class Duration
         };
     }
 
+    /**
+     * "Mon 17 Aug 2026" — the weekday in front of the date.
+     *
+     * Work is agreed in weekdays. "Due 20 Aug" makes the reader go and find a calendar
+     * to learn whether that is a Thursday there is still time to use or a Sunday nobody
+     * will be in, and a date that has to be looked up somewhere else is not the plain
+     * language NFR-U3 asks for. The day goes in front because that is the part being
+     * asked about; the number answers "which one" once the day has answered "when".
+     *
+     * Null returns $fallback rather than an empty string: a missing date is a fact about
+     * the work — no start, no due date — and blanking it reads as a rendering fault.
+     */
+    public static function dayDate(?CarbonInterface $date, string $fallback = '—'): string
+    {
+        return $date?->format('D j M Y') ?? $fallback;
+    }
+
+    /**
+     * The same date without the year, for the places already dense with numbers — a card
+     * front, a checklist row. The year is dropped, never the day: a due date this month
+     * needs its weekday far more than it needs to say 2026.
+     */
+    public static function shortDayDate(?CarbonInterface $date, string $fallback = '—'): string
+    {
+        return $date?->format('D j M') ?? $fallback;
+    }
+
     public static function words(?int $seconds): string
     {
         if ($seconds === null) {

@@ -1,3 +1,4 @@
+@php use App\Support\Duration; @endphp
 {{--
     FR-4.5 — the card, opened.
 
@@ -160,7 +161,7 @@
                         @if ($overdue)
                             <span aria-hidden="true" class="text-royal-400">·</span>
                             <span class="font-semibold text-powder-300">
-                                overdue since {{ $project->target_date->format('j M Y') }}
+                                overdue since {{ Duration::dayDate($project->target_date) }}
                             </span>
                         @endif
                     </div>
@@ -182,7 +183,7 @@
                          role="status">
                         <p class="text-[13px] leading-snug text-amber-900">
                             <span class="font-semibold">Archived</span>
-                            {{ $project->archived_at->timezone(config('worktrack.default_timezone'))->format('j M Y') }}.
+                            {{ Duration::dayDate($project->archived_at->timezone(config('worktrack.default_timezone'))) }}.
                             It is off the board and out of the dashboard, and its history is intact.
                         </p>
 
@@ -259,11 +260,11 @@
                                 <{{ $dateTag }} @if ($canEdit) wire:click="edit" aria-label="Edit start and due dates" @endif
                                     class="tnum -mx-1.5 mt-1.5 block rounded-lg border border-transparent px-1.5 py-1 text-left font-mono text-sm @if ($canEdit) transition hover:border-line-strong hover:bg-surface @endif">
                                     <span class="{{ $project->start_date ? 'text-ink' : 'text-ink-faint' }}">
-                                        {{ $project->start_date?->format('j M Y') ?? 'No start' }}
+                                        {{ Duration::dayDate($project->start_date, 'No start') }}
                                     </span>
                                     <span class="text-ink-faint">→</span>
                                     <span class="{{ $project->target_date ? ($overdue ? 'font-semibold text-health-stalled' : 'text-ink') : 'text-ink-faint' }}">
-                                        {{ $project->target_date?->format('j M Y') ?? 'No due date' }}
+                                        {{ Duration::dayDate($project->target_date, 'No due date') }}
                                     </span>
                                 </{{ $dateTag }}>
 
@@ -576,7 +577,7 @@
                                                     @endif
                                                     @if ($task->due_date)
                                                         <span class="tnum font-mono {{ $task->isOverdue() ? 'font-semibold text-health-stalled' : '' }}">
-                                                            due {{ $task->due_date->format('j M') }}
+                                                            due {{ Duration::shortDayDate($task->due_date) }}
                                                         </span>
                                                     @endif
                                                 </p>

@@ -111,7 +111,7 @@
 
         <x-panel class="mt-6"
                  heading="Past due and due soon"
-                 :note="'Live work with a target date on or before '.now(config('worktrack.default_timezone'))->addDays($m['deadlines']['soon_days'])->format('j M').'. Most overdue first.'">
+                 :note="'Live work with a target date on or before '.Duration::shortDayDate(now(config('worktrack.default_timezone'))->addDays($m['deadlines']['soon_days'])).'. Most overdue first.'">
             <x-slot:header>
                 <p class="font-mono text-[11px] uppercase tracking-[0.08em] text-ink-faint">
                     <span @class(['text-health-stalled' => $overdue->isNotEmpty()])>{{ $overdue->count() }} overdue</span>
@@ -168,7 +168,7 @@
                                         @endif
                                     </td>
                                     <td class="py-2.5 pr-3 font-mono text-[11px] tabular-nums text-ink-soft">
-                                        {{ $p->target_date->format('j M Y') }}
+                                        {{ Duration::dayDate($p->target_date) }}
                                     </td>
                                     <td class="py-2.5 text-right">
                                         <span @class([
