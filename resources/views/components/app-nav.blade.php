@@ -95,8 +95,7 @@
                     {{ $user->role->label() }}
                 </span>
 
-                <form method="POST" action="{{ route('logout') }}">
-                    @csrf
+                <x-sign-out-form>
                     <button class="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-royal-200 transition hover:bg-royal-800 hover:text-ink-inverse">
                         <svg class="size-4 flex-none" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                              stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -106,7 +105,7 @@
                         </svg>
                         Sign out
                     </button>
-                </form>
+                </x-sign-out-form>
             @endif
         </nav>
     </div>

@@ -31,9 +31,8 @@
             </p>
         @endif
 
-        <form method="POST" action="{{ route('logout') }}" class="mt-8">
-            @csrf
+        <x-sign-out-form class="mt-8">
             <button class="text-sm font-medium text-slate-600 underline hover:text-slate-900">Sign out</button>
-        </form>
+        </x-sign-out-form>
     </div>
 </x-layouts.app>

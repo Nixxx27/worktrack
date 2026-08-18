@@ -61,6 +61,55 @@ describe('the approval gate', function () {
     });
 });
 
+describe('the sign-out guard', function () {
+
+    // In the header, sign-out sits in the same row as Board, Dashboard and Settings and
+    // is styled like them, so the control that ends the session reads as one more place
+    // to go. An unguarded mis-click costs the login plus every deferred wire:model draft
+    // in the drawer — the comment box, the new-task row, the health reason.
+    //
+    // The forms are located and then inspected, rather than the page being searched for
+    // a string, so re-inlining a form somewhere with its own wording still fails here.
+    it('confirms before ending the session, on every screen that offers sign-out', function () {
+        $screens = [
+            '/board' => makeUser('nav@gmail.com'),
+            '/pending' => makeUser('waiting@gmail.com', UserRole::Viewer, UserStatus::Pending),
+        ];
+
+        $unguarded = [];
+        $found = 0;
+
+        foreach ($screens as $path => $user) {
+            $html = $this->actingAs($user)->get($path)->assertOk()->getContent();
+
+            preg_match_all('/<form\b[^>]*>/i', $html, $matches);
+
+            foreach ($matches[0] as $form) {
+                if (! str_contains($form, route('logout'))) {
+                    continue;
+                }
+
+                $found++;
+
+                if (! str_contains($form, 'onsubmit="return confirm(')) {
+                    $unguarded[] = $path;
+                }
+            }
+        }
+
+        expect($unguarded)->toBe([])
+            ->and($found)->toBe(count($screens));
+    });
+
+    // The wording is the promise about what is about to be lost, so changing it should
+    // require a deliberate edit here as well as in the component.
+    it('says that unsaved work will be lost', function () {
+        $this->actingAs(makeUser('draft@gmail.com'))
+            ->get('/board')
+            ->assertSee('Anything you have typed and not saved will be lost', false);
+    });
+});
+
 describe('email canonicalisation for the blocklist', function () {
 
     // AUTH-D21 — without this, a rejected applicant re-applies as

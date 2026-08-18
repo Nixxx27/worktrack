@@ -19,11 +19,10 @@
             You'll get an email as soon as that happens. Nothing else to do in the meantime.
         </p>
 
-        <form method="POST" action="{{ route('logout') }}" class="mt-6">
-            @csrf
+        <x-sign-out-form class="mt-6">
             <button type="submit" class="text-sm font-medium text-ink-soft underline hover:text-ink">
                 Sign out
             </button>
-        </form>
+        </x-sign-out-form>
     </div>
 </x-layouts.centered>
