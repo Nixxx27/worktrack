@@ -185,6 +185,80 @@ return [
     ],
 
     /*
+     * ═══════════════════════════════════════════════════════════════════════════
+     * FR-6.4 — the types that may be served INLINE, so a file can be LOOKED AT
+     * without first being saved to disk.
+     *
+     * Downloads used to be unconditional: every file, including the screenshot that
+     * is most of the real traffic, cost a trip to the Downloads folder and a second
+     * application before anyone could see what was in it. On a board where the
+     * artifact IS the answer — a photo of the rack, the PDF of the quote — that is
+     * the wrong default, and it is the reason files got pasted into chat instead.
+     *
+     * This is an ALLOWLIST for the same reason `allowed_mimes` is one: a denylist
+     * fails open on every format nobody thought of, and the direction to fail here
+     * is closed. Anything absent from both lists below is still forced to disk with
+     * `Content-Disposition: attachment`, exactly as before.
+     *
+     * Served AS ITSELF — the browser renders the bytes with their real type. Only
+     * formats a browser displays natively and cannot execute are listed. Notably
+     * absent: image/svg+xml, which is an XML document that may carry script; and
+     * heic/tiff/psd/dwg/dxf, which most browsers cannot draw, so an inline attempt
+     * would produce a broken tab rather than a preview.
+     */
+    'inline_mimes' => [
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'image/bmp',
+
+        'application/pdf',
+
+        'video/mp4',
+        'video/webm',
+        'video/quicktime',
+        'audio/mpeg',
+        'audio/wav',
+        'audio/x-wav',
+        'audio/mp4',
+        'audio/x-m4a',
+        'audio/ogg',
+    ],
+
+    /*
+     * Served AS TEXT — inline, but with the response Content-Type overridden to
+     * text/plain so the browser SHOWS the file rather than interpreting it.
+     *
+     * This is what makes previewing a .html, .css or .js safe, and it is the answer
+     * to the question the `text/html` note above leaves open ("if an inline preview
+     * is ever added, these three entries are the ones to reconsider first"). Serving
+     * a page with its real type would execute whatever is in it on the storage
+     * origin: not this app's origin, so there is no session or cookie within reach,
+     * but a plausible-looking corporate URL running attacker-authored script is not
+     * a thing to hand out for the convenience of skipping a download. Overriding the
+     * type keeps the preview — you can read the file — and removes the execution.
+     *
+     * The consequence is worth stating plainly in the UI, and it is: a web file
+     * previews as SOURCE. Someone who wants the rendered page downloads it and opens
+     * it locally, which is the same click it has always been.
+     * ═══════════════════════════════════════════════════════════════════════════
+     */
+    'inline_text_mimes' => [
+        'text/plain',
+        'text/csv',
+        'text/markdown',
+        'application/json',
+        'text/xml',
+        'application/xml',
+        'application/yaml',
+        'text/html',
+        'text/css',
+        'text/javascript',
+        'application/javascript',
+    ],
+
+    /*
      * FR-6.3 — signed-URL lifetime in MINUTES, clamped to [1, 60] in code.
      *
      * 1 is deliberate: the URL is minted fresh behind an authorizing route, redirected

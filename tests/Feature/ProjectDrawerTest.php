@@ -709,6 +709,177 @@ describe('attachments on R2 (FR-6)', function () {
 
         expect(Attachment::withoutGlobalScopes()->count())->toBe(0);
     });
+
+    /*
+     * ═══════════════════════════════════════════════════════════════════════════════
+     * FR-6.4 — LOOKING at a file, which used to mean downloading it first.
+     *
+     * Every download was forced to disk, including the screenshot that is most of the
+     * real traffic, so seeing what was on a card cost a trip to the Downloads folder
+     * and a second application. These tests pin the two halves of the fix: that a
+     * type a browser can safely display is served inline, and that the request to do
+     * so cannot widen past the allowlist.
+     *
+     * They assert on responseOverrides() rather than on the signed URL, because the
+     * faked disk is a local adapter — it signs a route and ignores the S3 response
+     * overrides entirely, so a URL assertion here would be asserting the harness.
+     * ═══════════════════════════════════════════════════════════════════════════════
+     */
+    it('serves a previewable type inline, and everything else as a download', function () {
+        $image = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->image('rack.png'),
+            $this->member,
+        );
+
+        $archive = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->create('logs.zip', 5, 'application/zip'),
+            $this->member,
+        );
+
+        $service = app(AttachmentService::class);
+
+        expect($image->isPreviewable())->toBeTrue()
+            ->and($service->responseOverrides($image, preview: true)['ResponseContentDisposition'])
+            ->toStartWith('inline;')
+            // Shown as itself: a PNG is not source, and overriding its type would
+            // turn the preview into a wall of bytes.
+            ->and($service->responseOverrides($image, preview: true))
+            ->not->toHaveKey('ResponseContentType')
+            // The filename survives either way — the object key is deliberately opaque.
+            ->and($service->responseOverrides($image, preview: true)['ResponseContentDisposition'])
+            ->toContain('rack.png');
+
+        expect($archive->isPreviewable())->toBeFalse()
+            ->and($service->responseOverrides($archive, preview: true)['ResponseContentDisposition'])
+            ->toStartWith('attachment;');
+    });
+
+    it('leaves an unasked-for download forced to disk, exactly as before', function () {
+        // The default has not moved: a link that does not ask for a preview gets the
+        // pre-existing behaviour for every type, previewable or not.
+        $image = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->image('rack.png'),
+            $this->member,
+        );
+
+        expect(app(AttachmentService::class)->responseOverrides($image)['ResponseContentDisposition'])
+            ->toStartWith('attachment;');
+    });
+
+    /**
+     * The reason a .html may be previewed at all.
+     *
+     * Served with its real type it would EXECUTE on the storage origin. Served as
+     * text/plain it is readable and inert, which is the trade the config note next to
+     * `text/html` calls for: the preview shows source, and the rendered page is still
+     * a download away.
+     */
+    it('previews a web file as text so that nothing in it can run', function () {
+        $page = app(AttachmentService::class)->upload(
+            $this->project,
+            sniffableUpload('teaser.html', "<!DOCTYPE html>\n<html><body><script>alert(1)</script></body></html>\n"),
+            $this->member,
+        );
+
+        $overrides = app(AttachmentService::class)->responseOverrides($page, preview: true);
+
+        expect($page->mime_type)->toBe('text/html')
+            ->and($page->isPreviewable())->toBeTrue()
+            ->and($page->previewsAsSource())->toBeTrue()
+            ->and($overrides['ResponseContentDisposition'])->toStartWith('inline;')
+            ->and($overrides['ResponseContentType'])->toBe('text/plain; charset=utf-8');
+    });
+
+    /**
+     * `preview` reaches the service from a URL, which makes it user input. It may only
+     * widen as far as the allowlist already allows.
+     *
+     * SVG is the case worth naming: an allowed UPLOAD that must never be an inline
+     * render, because it is an XML document that can carry script and would run with
+     * the full privileges of the origin serving it.
+     */
+    it('cannot be talked into previewing a type that is not on the list', function () {
+        $vector = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->create('logo.svg', 2, 'image/svg+xml'),
+            $this->member,
+        );
+
+        expect($vector->status)->toBe('available')
+            ->and($vector->isPreviewable())->toBeFalse()
+            ->and(app(AttachmentService::class)->responseOverrides($vector, preview: true)['ResponseContentDisposition'])
+            ->toStartWith('attachment;');
+    });
+
+    it('nothing that is not available is previewable, whatever its type is', function () {
+        $image = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->image('rack.png'),
+            $this->member,
+        );
+
+        SystemContext::run(fn () => $image->forceFill(['status' => 'pending'])->save());
+
+        expect($image->fresh()->isPreviewable())->toBeFalse();
+    });
+
+    it('routes a preview through the same authorizing route as a download', function () {
+        $image = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->image('rack.png'),
+            $this->member,
+        );
+
+        resetContext();
+
+        $this->actingAs($this->member)
+            ->get(route('attachments.preview', $image->public_id))
+            ->assertRedirect();
+    });
+
+    it('404s a preview for someone outside the tracker, exactly like a download', function () {
+        // The new path must not be a second, laxer way in. Same policy, same answer.
+        $foreign = SystemContext::run(function () {
+            $p = app(ProjectService::class)->create($this->sdTracker, ['name' => 'Payroll'], $this->admin);
+
+            return app(AttachmentService::class)->upload($p, UploadedFile::fake()->image('b.png'), $this->admin);
+        });
+
+        resetContext();
+
+        $this->actingAs($this->member)
+            ->get(route('attachments.preview', $foreign->public_id))
+            ->assertNotFound();
+    });
+
+    it('sends the filename to a preview when it can be shown, and to a download when it cannot', function () {
+        $image = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->image('rack.png'),
+            $this->member,
+        );
+
+        $archive = app(AttachmentService::class)->upload(
+            $this->project,
+            UploadedFile::fake()->create('logs.zip', 5, 'application/zip'),
+            $this->member,
+        );
+
+        $component = drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->call('setTab', 'files');
+
+        $component
+            // The previewable file: filename opens it, and saving it stays one click.
+            ->assertSee(route('attachments.preview', $image->public_id), false)
+            ->assertSee(route('attachments.download', $image->public_id), false)
+            // The archive can only ever be downloaded, so it grows no second control.
+            ->assertSee(route('attachments.download', $archive->public_id), false)
+            ->assertDontSee(route('attachments.preview', $archive->public_id), false);
+    });
 });
 
 /**

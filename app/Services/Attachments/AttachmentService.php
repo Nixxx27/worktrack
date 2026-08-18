@@ -132,8 +132,12 @@ class AttachmentService
      * the policy, and keeping the check out of here means it cannot be accidentally
      * satisfied by a service call that skips it. What it does enforce is that only an
      * 'available' row is ever signable, so a pending or failed upload has no URL at all.
+     *
+     * @param  bool  $preview  ask for the object to be shown rather than saved. A
+     *                         REQUEST, not an instruction: responseOverrides() decides
+     *                         what the type actually permits.
      */
-    public function temporaryUrl(Attachment $attachment): string
+    public function temporaryUrl(Attachment $attachment, bool $preview = false): string
     {
         if ($attachment->status !== 'available') {
             throw new AttachmentRejected('That file is not available.');
@@ -147,13 +151,57 @@ class AttachmentService
         return Storage::disk($attachment->disk)->temporaryUrl(
             $attachment->object_key,
             now()->addMinutes($ttl),
-            [
-                // Forces a download with the ORIGINAL filename rather than the opaque
-                // object key, and never inline — an inline-rendered upload is a stored
-                // XSS in the app's own origin if the sniffer is ever wrong.
-                'ResponseContentDisposition' => 'attachment; filename="'.addslashes($attachment->original_filename).'"',
-            ],
+            $this->responseOverrides($attachment, $preview),
         );
+    }
+
+    /**
+     * What the signed URL asks the storage origin to do with the object when it is
+     * fetched — the whole download-versus-preview decision, in one readable place.
+     *
+     * ═══════════════════════════════════════════════════════════════════════════════
+     * THE CALLER ASKS; THIS METHOD DECIDES.
+     *
+     * $preview arrives from a route, which means it arrives from a URL, which means it
+     * is user input. It can only ever WIDEN as far as the type allows: a request to
+     * preview a .zip or an .svg produces the same forced download it always did,
+     * because isPreviewable() consults an allowlist rather than the request.
+     *
+     * The three outcomes, and why each is what it is:
+     *
+     *   1. Not previewable → `attachment`, exactly as before. Unchanged behaviour for
+     *      every type that is not on a list, which is the fail-closed direction.
+     *   2. Previewable as itself → `inline` with the real type. Images, PDF, video and
+     *      audio: formats a browser DISPLAYS and cannot run.
+     *   3. Previewable as source → `inline`, with the type overridden to text/plain.
+     *      This is what makes a .html or .js previewable at all. Serving one with its
+     *      real type would execute it on the storage origin; as text/plain the reader
+     *      sees the file and nothing runs. The app's own origin was never involved
+     *      either way — objects are served from R2, not from here — so the override is
+     *      protecting the storage domain's origin and the reader's browser, not a
+     *      session that was never in reach.
+     *
+     * Every branch keeps `filename=`, because the object key is deliberately opaque
+     * (FR-6.6) and a preview saved from the browser's own toolbar should still land as
+     * the name the uploader chose.
+     * ═══════════════════════════════════════════════════════════════════════════════
+     *
+     * @return array<string, string>
+     */
+    public function responseOverrides(Attachment $attachment, bool $preview = false): array
+    {
+        $inline = $preview && $attachment->isPreviewable();
+
+        $overrides = [
+            'ResponseContentDisposition' => ($inline ? 'inline' : 'attachment')
+                .'; filename="'.addslashes($attachment->original_filename).'"',
+        ];
+
+        if ($inline && $attachment->previewsAsSource()) {
+            $overrides['ResponseContentType'] = 'text/plain; charset=utf-8';
+        }
+
+        return $overrides;
     }
 
     /**

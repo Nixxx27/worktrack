@@ -78,6 +78,36 @@ class Attachment extends Model
             && $this->mime_type !== 'image/svg+xml';
     }
 
+    /**
+     * FR-6.4 — may this be opened for a LOOK rather than saved to disk first?
+     *
+     * The row answers this, not the view: `status` is already the authority on
+     * whether an object may be served at all, and a preview is a serve. The type
+     * lists live in config/attachments.php next to the upload allowlist, because
+     * "what may be uploaded" and "what may be rendered" are one policy read
+     * together — the argument for allowing .html at all is the same argument that
+     * decides how it comes back out.
+     */
+    public function isPreviewable(): bool
+    {
+        return $this->status === 'available'
+            && ($this->previewsAsSource() || in_array(
+                $this->mime_type,
+                config('attachments.inline_mimes', []),
+                true,
+            ));
+    }
+
+    /**
+     * Previewed as TEXT rather than as itself — the web files and the structured
+     * data formats. Worth its own method because the UI has to say so: a .html that
+     * opens as source and not as a page is a surprise unless it is labelled.
+     */
+    public function previewsAsSource(): bool
+    {
+        return in_array($this->mime_type, config('attachments.inline_text_mimes', []), true);
+    }
+
     /** Human-readable size for the card UI. */
     public function humanSize(): string
     {

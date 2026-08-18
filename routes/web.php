@@ -73,11 +73,17 @@ Route::middleware('auth')->group(function () {
     Route::get('/activity', ActivityLog::class)->name('activity');
 
     // FR-6.4 — mints a short-lived signed R2 URL after re-checking the policy, then
-    // redirects. Throttled because it is the one route that hands out capability
+    // redirects. Throttled because these are the routes that hand out capability
     // tokens, and an authenticated account enumerating public_ids should be slowed.
-    Route::get('/attachments/{attachment}', AttachmentController::class)
-        ->middleware('throttle:60,1')
-        ->name('attachments.download');
+    //
+    // Preview and download are separate PATHS rather than one path with a query flag,
+    // so the throttle, the logs and a future audit line all read which one was asked
+    // for. Both mint through the same policy check; see the controller for why the
+    // ability is shared and why the URL cannot widen what may be shown inline.
+    Route::middleware('throttle:60,1')->controller(AttachmentController::class)->group(function () {
+        Route::get('/attachments/{attachment}', 'download')->name('attachments.download');
+        Route::get('/attachments/{attachment}/preview', 'preview')->name('attachments.preview');
+    });
 });
 
 // ── administration ──────────────────────────────────────────────────────────

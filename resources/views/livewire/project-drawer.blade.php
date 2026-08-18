@@ -757,12 +757,33 @@
                                             {{ \Illuminate\Support\Str::limit($file->extension ?? 'file', 4, '') }}
                                         </span>
 
+                                        @php
+                                            // FR-6.4 — the row knows whether its type may be shown inline;
+                                            // the view only decides where the filename points.
+                                            $previewable = $file->isPreviewable();
+                                        @endphp
+
                                         <div class="min-w-0 flex-1">
                                             {{-- A normal link to an authorizing route, which re-checks the
                                                  policy and only then redirects to a short-lived signed URL.
                                                  The signed URL is never rendered into the page: once minted
-                                                 it is a bearer token, and a page is a place URLs get shared. --}}
-                                            <a href="{{ route('attachments.download', $file->public_id) }}"
+                                                 it is a bearer token, and a page is a place URLs get shared.
+                                                 That is also why there are no inline thumbnails here — a
+                                                 rendered <img> would put the token in the markup.
+
+                                                 The filename OPENS the file when the browser can show it,
+                                                 and only falls back to downloading when it cannot. Looking
+                                                 at a screenshot or a quote used to cost a trip to the
+                                                 Downloads folder and a second application, which is most of
+                                                 why files went to chat instead of onto the card. New tab,
+                                                 not this one: the drawer holds an unsaved comment box. --}}
+                                            <a href="{{ $previewable ? route('attachments.preview', $file->public_id) : route('attachments.download', $file->public_id) }}"
+                                               @if ($previewable)
+                                                   target="_blank" rel="noopener"
+                                                   title="{{ $file->previewsAsSource() ? 'Opens in a new tab as text — a web file is never run from here. Download it to open the rendered page.' : 'Opens in a new tab' }}"
+                                               @else
+                                                   title="Downloads — this type cannot be shown in the browser"
+                                               @endif
                                                class="block truncate text-sm font-medium text-royal-800 underline-offset-2 hover:underline">
                                                 {{ $file->original_filename }}
                                             </a>
@@ -770,6 +791,18 @@
                                                 {{ $file->humanSize() }} · {{ $file->uploader?->name ?? 'unknown' }} · {{ $file->created_at->diffForHumans() }}
                                             </p>
                                         </div>
+
+                                        {{-- Kept as a visible action rather than revealed on hover like
+                                             Delete: once the filename previews, saving the file is a
+                                             separate everyday intention, and hiding it would trade one
+                                             extra step for another. --}}
+                                        @if ($previewable)
+                                            <a href="{{ route('attachments.download', $file->public_id) }}"
+                                               aria-label="Download {{ $file->original_filename }}"
+                                               class="flex-none rounded px-1.5 py-0.5 text-[11px] text-ink-faint transition hover:bg-powder-200 hover:text-royal-800">
+                                                Download
+                                            </a>
+                                        @endif
 
                                         @can('delete', $file)
                                             <button wire:click="deleteFile({{ $file->id }})"
