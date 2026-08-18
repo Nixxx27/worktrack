@@ -627,14 +627,31 @@ class Board extends Component
         $this->moveProject($project, $step, $afterProject);
     }
 
+    /**
+     * Where the drop lands, as a board_position.
+     *
+     * "No card above it" and "no valid target" both arrive as a null $afterProjectId
+     * but mean opposite ends of the column, and collapsing them is what used to send
+     * every card dropped on the top straight back to the bottom.
+     */
     private function resolveDropPosition(int $stepId, ?int $afterProjectId, ProjectService $projects): ?float
     {
+        // The client omits the id only when the card landed at index 0 — cards are the
+        // column's only children, so nothing above it means the top of the column.
         if ($afterProjectId === null) {
-            return null;   // append
+            $first = Project::where('step_id', $stepId)
+                ->orderBy('board_position')
+                ->value('board_position');
+
+            // An empty column has no top to sit above; appending is the same position.
+            return $first === null ? null : $projects->positionBetween(null, (float) $first);
         }
 
         $after = Project::whereKey($afterProjectId)->first();
 
+        // A card that has since been moved or archived by someone else. Unlike the case
+        // above this genuinely has no target, so the bottom of the column is the honest
+        // answer rather than a guess at what the dragger meant.
         if ($after === null) {
             return null;
         }

@@ -36,6 +36,18 @@ function asUser(User $user)
     return Livewire::actingAs($user);
 }
 
+/**
+ * The order the board renders a column in, which is board_position ascending. Read
+ * through the system context on purpose: a test asserting where a card LANDED should
+ * not also be able to fail because the card became invisible. Visibility is asserted
+ * on its own, above.
+ */
+function boardOrder(int $stepId): array
+{
+    return SystemContext::run(fn () => Project::where('step_id', $stepId)
+        ->orderBy('board_position')->pluck('name')->all());
+}
+
 beforeEach(function () {
     $this->admin = makeUser('admin@example.com', UserRole::Admin);
     bindContextFor($this->admin);
@@ -241,6 +253,102 @@ describe('moving a card', function () {
         expect(fn () => asUser($this->admin)->test(Board::class)
             ->call('moveProject', $this->itProject->public_id, $foreignStep->id))
             ->toThrow(ModelNotFoundException::class);
+    });
+});
+
+describe('where a dropped card lands', function () {
+
+    beforeEach(function () {
+        // 'Firewall upgrade' already sits in Backlog from the outer setup, so these
+        // two land below it: Firewall, Second, Third.
+        $this->backlog = $this->steps['Backlog'];
+
+        foreach (['Second', 'Third'] as $name) {
+            app(ProjectService::class)->create($this->itTracker, ['name' => $name], $this->admin);
+        }
+    });
+
+    it('puts a card dropped on the top of its own column at the top', function () {
+        // The regression. The client sends no after-card when the card lands at index
+        // 0, and reading that as "append" sent every top drop to the bottom instead —
+        // the one drop position a user cannot express any other way.
+        $third = SystemContext::run(fn () => Project::where('name', 'Third')->firstOrFail());
+
+        asUser($this->admin)->test(Board::class)
+            ->call('moveProject', $third->public_id, $this->backlog->id, null)
+            ->assertHasNoErrors();
+
+        expect(boardOrder($this->backlog->id))->toBe(['Third', 'Firewall upgrade', 'Second']);
+    });
+
+    it('puts a card dropped on the top of a different column at the top', function () {
+        $inProgress = $this->steps['In Progress'];
+
+        // Something to land above, otherwise the empty-column path is what runs.
+        $resident = app(ProjectService::class)->create($this->itTracker, ['name' => 'Resident'], $this->admin);
+        app(ProjectService::class)->move($resident, $inProgress, $this->admin);
+
+        asUser($this->admin)->test(Board::class)
+            ->call('moveProject', $this->itProject->public_id, $inProgress->id, null)
+            ->assertHasNoErrors();
+
+        expect(boardOrder($inProgress->id))->toBe(['Firewall upgrade', 'Resident']);
+    });
+
+    it('still drops a card between the two it was dropped between', function () {
+        $third = SystemContext::run(fn () => Project::where('name', 'Third')->firstOrFail());
+
+        asUser($this->admin)->test(Board::class)
+            ->call('moveProject', $third->public_id, $this->backlog->id, $this->itProject->id)
+            ->assertHasNoErrors();
+
+        expect(boardOrder($this->backlog->id))->toBe(['Firewall upgrade', 'Third', 'Second']);
+    });
+
+    it('appends into an empty column, where there is no top to sit above', function () {
+        $inProgress = $this->steps['In Progress'];
+
+        asUser($this->admin)->test(Board::class)
+            ->call('moveProject', $this->itProject->public_id, $inProgress->id, null)
+            ->assertHasNoErrors();
+
+        expect(boardOrder($inProgress->id))->toBe(['Firewall upgrade']);
+    });
+
+    it('falls back to the bottom when the card it was dropped below has gone', function () {
+        // Someone else archived or moved it mid-drag. Unlike a top drop this genuinely
+        // has no target, so the bottom is the honest answer rather than a guess.
+        $third = SystemContext::run(fn () => Project::where('name', 'Third')->firstOrFail());
+
+        asUser($this->admin)->test(Board::class)
+            ->call('moveProject', $third->public_id, $this->backlog->id, 99999)
+            ->assertHasNoErrors();
+
+        expect(boardOrder($this->backlog->id))->toBe(['Firewall upgrade', 'Second', 'Third']);
+    });
+
+    it('survives repeated drops on the top without two cards colliding', function () {
+        // The reason the top branch steps down by a fixed gap instead of halving.
+        // Halving converges on zero and DECIMAL(20,10) runs out after roughly 43 of
+        // these, at which point two cards share a position and the order goes random.
+        $names = [];
+
+        for ($i = 1; $i <= 60; $i++) {
+            $name = 'Top '.$i;
+            $names[] = $name;
+
+            $card = app(ProjectService::class)->create($this->itTracker, ['name' => $name], $this->admin);
+
+            asUser($this->admin)->test(Board::class)
+                ->call('moveProject', $card->public_id, $this->backlog->id, null)
+                ->assertHasNoErrors();
+        }
+
+        $positions = SystemContext::run(fn () => Project::where('step_id', $this->backlog->id)
+            ->pluck('board_position')->all());
+
+        expect(array_slice(boardOrder($this->backlog->id), 0, 60))->toBe(array_reverse($names))
+            ->and(count(array_unique($positions)))->toBe(count($positions));
     });
 });
 

@@ -305,8 +305,14 @@ class ProjectService
             return 1000.0;
         }
 
+        // A whole gap below the first card rather than half of it. Halving looks
+        // equivalent but is not: it converges on zero, and DECIMAL(20,10) runs out
+        // after about 43 successive drops onto the top of one column, at which point
+        // two cards collide. Stepping down by a fixed gap never degrades — the column
+        // is signed, so it simply walks negative — and it mirrors the append branch
+        // below, which has never had a ceiling.
         if ($before === null) {
-            return $after / 2;
+            return $after - 1000;
         }
 
         if ($after === null) {
