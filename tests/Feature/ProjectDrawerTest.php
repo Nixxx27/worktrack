@@ -1028,13 +1028,11 @@ describe('every tab renders', function () {
 
 describe('the comments and activity rail', function () {
 
-    it('interleaves comments with the activity trail once the trail is shown', function () {
+    it('interleaves comments with the activity trail', function () {
         app(CommentService::class)->create($this->project, 'Vendor confirmed the window.', $this->colleague);
 
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
-            ->call('toggleActivity')
-            ->assertSet('showActivity', true)
             ->assertSee('Vendor confirmed the window.')
             ->assertSee('created this project');
     });
@@ -1054,16 +1052,56 @@ describe('the comments and activity rail', function () {
             ->not->toContain('comment');
     });
 
-    // The generated trail always outnumbers the written remarks, so the rail opens on
-    // the conversation and the trail is the thing you ask for.
-    it('opens on the comments alone, with the trail collapsed', function () {
+    // What a card has been through is most of why anyone opens the drawer, so the rail
+    // opens on the whole record and hiding it is the thing you ask for.
+    it('opens with the trail already showing', function () {
         app(CommentService::class)->create($this->project, 'Vendor confirmed the window.', $this->colleague);
 
         drawerAs($this->member)->test(ProjectDrawer::class)
             ->call('openFor', $this->project->public_id)
+            ->assertSet('showActivity', true)
+            ->assertSee('Vendor confirmed the window.')
+            ->assertSee('created this project');
+    });
+
+    it('still collapses to the comments alone when asked', function () {
+        app(CommentService::class)->create($this->project, 'Vendor confirmed the window.', $this->colleague);
+
+        drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->call('toggleActivity')
             ->assertSet('showActivity', false)
             ->assertSee('Vendor confirmed the window.')
             ->assertDontSee('created this project');
+    });
+
+    // The point of persisting it. A default nobody can escape without re-escaping it on
+    // every refresh is not a preference, and the noisy-card case the old default was
+    // protecting is exactly the one that needs the choice to hold.
+    it('remembers the trail was hidden, across a fresh page load', function () {
+        drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->call('toggleActivity')
+            ->assertSet('showActivity', false);
+
+        // A second mount is what a refresh does: new component, same session.
+        drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->assertSet('showActivity', false)
+            ->assertDontSee('created this project');
+    });
+
+    it('remembers the trail was shown again, across a fresh page load', function () {
+        drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->call('toggleActivity')
+            ->call('toggleActivity')
+            ->assertSet('showActivity', true);
+
+        drawerAs($this->member)->test(ProjectDrawer::class)
+            ->call('openFor', $this->project->public_id)
+            ->assertSet('showActivity', true)
+            ->assertSee('created this project');
     });
 });
 

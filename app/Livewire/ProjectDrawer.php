@@ -25,6 +25,7 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Session;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
@@ -95,14 +96,23 @@ class ProjectDrawer extends Component
     /**
      * Whether the right rail shows the activity trail alongside the comments.
      *
-     * OFF by default. Interleaving was the right idea and it is still one click
-     * away, but the trail is generated and the comments are written, so the trail
-     * always wins on volume: a card someone tagged and untagged in the same minute
-     * buries the two remarks that carry the actual state of the work under a dozen
-     * lines nobody reads. The rail opens on what a person chose to say; the record
-     * of what the software noticed is there when you go looking for it.
+     * ON by default, and remembered. This started OFF on the reasoning that the trail
+     * is generated while comments are written, so the trail always wins on volume and
+     * buries the remarks that carry the actual state of the work. True, but it costs
+     * the wrong thing: what a card has BEEN THROUGH — moved, reprioritised, reassigned
+     * — is most of why anyone opens the drawer, and a default that hides it makes the
+     * common reading a click away while protecting a minority of noisy cards.
+     *
+     * #[Session] is what makes the default survivable in both directions. Whichever
+     * way a person sets it, it stays set across reloads instead of springing back on
+     * every refresh, so anyone who does find the trail noisy turns it off once rather
+     * than once per page load. It rides the session rather than a users column: it is
+     * a view preference, not a fact about the person, and it is not worth a migration.
+     * The cost is that it resets after the session expires — the toggle is right
+     * there, and the default is now the one most people want anyway.
      */
-    public bool $showActivity = false;
+    #[Session('drawer.activity')]
+    public bool $showActivity = true;
 
     // ── task composer ───────────────────────────────────────────────────────────
     public string $taskTitle = '';
