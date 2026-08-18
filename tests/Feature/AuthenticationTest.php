@@ -69,44 +69,66 @@ describe('the sign-out guard', function () {
     // in the drawer — the comment box, the new-task row, the health reason.
     //
     // The forms are located and then inspected, rather than the page being searched for
-    // a string, so re-inlining a form somewhere with its own wording still fails here.
-    it('confirms before ending the session, on every screen that offers sign-out', function () {
+    // a string, so re-inlining a form somewhere without the hook still fails here.
+    it('routes every sign-out through the confirmation dialog', function () {
         $screens = [
             '/board' => makeUser('nav@gmail.com'),
             '/pending' => makeUser('waiting@gmail.com', UserRole::Viewer, UserStatus::Pending),
         ];
 
-        $unguarded = [];
-        $found = 0;
+        $unhooked = [];
+        $forms = 0;
 
         foreach ($screens as $path => $user) {
             $html = $this->actingAs($user)->get($path)->assertOk()->getContent();
 
-            preg_match_all('/<form\b[^>]*>/i', $html, $matches);
+            preg_match_all('/<form\\b[^>]*>/i', $html, $matches);
 
             foreach ($matches[0] as $form) {
                 if (! str_contains($form, route('logout'))) {
                     continue;
                 }
 
-                $found++;
+                $forms++;
 
-                if (! str_contains($form, 'onsubmit="return confirm(')) {
-                    $unguarded[] = $path;
+                if (! str_contains($form, 'data-sign-out')) {
+                    $unhooked[] = $path;
                 }
             }
         }
 
-        expect($unguarded)->toBe([])
-            ->and($found)->toBe(count($screens));
+        expect($unhooked)->toBe([])
+            ->and($forms)->toBe(count($screens));
     });
 
-    // The wording is the promise about what is about to be lost, so changing it should
-    // require a deliberate edit here as well as in the component.
-    it('says that unsaved work will be lost', function () {
+    // The dialog is what the hook above opens. Asserting it separately means a page that
+    // ships the form without the dialog — the combination that would submit unguarded —
+    // is a failure rather than a half-pass.
+    it('ships the dialog on every screen that offers sign-out, exactly once', function () {
+        $screens = [
+            '/board' => makeUser('dialog-nav@gmail.com'),
+            '/pending' => makeUser('dialog-wait@gmail.com', UserRole::Viewer, UserStatus::Pending),
+        ];
+
+        foreach ($screens as $path => $user) {
+            $html = $this->actingAs($user)->get($path)->assertOk()->getContent();
+
+            expect(substr_count($html, 'id="sign-out-dialog"'))->toBe(1)
+                ->and($html)->toContain('data-sign-out-confirm')
+                ->and($html)->toContain('data-sign-out-cancel')
+                // Labelled, so the dialog announces itself rather than opening mute.
+                ->and($html)->toContain('aria-labelledby="sign-out-title"');
+        }
+    });
+
+    // The wording is the promise about what is about to be lost, and the address answers
+    // "which session am I dropping" on a shared machine. Both should take a deliberate
+    // edit here as well as in the component.
+    it('names the account and says that unsaved work goes with it', function () {
         $this->actingAs(makeUser('draft@gmail.com'))
             ->get('/board')
-            ->assertSee('Anything you have typed and not saved will be lost', false);
+            ->assertSee('Anything you have typed but not saved goes with the session', false)
+            ->assertSee('draft@gmail.com', false);
     });
 });
 

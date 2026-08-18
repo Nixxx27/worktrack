@@ -65,3 +65,65 @@ window.boardColumn = (stepId) => ({
         });
     },
 });
+
+/**
+ * Confirmation for sign-out.
+ *
+ * Progressive enhancement over a real POST form: the form is what actually signs you
+ * out, and this only steps in front of it. If the browser has no <dialog>, the submit
+ * runs as before — an unguarded sign-out beats a sign-out button that does nothing.
+ *
+ * The listener is delegated from the document rather than bound to the button, because
+ * the header renders inside a Livewire component and a bound handler would not survive
+ * the morph. It is also why the dialog markup carries wire:ignore.
+ */
+document.addEventListener('submit', (event) => {
+    const form = event.target.closest?.('form[data-sign-out]');
+    const dialog = document.getElementById('sign-out-dialog');
+
+    if (! form || typeof dialog?.showModal !== 'function') {
+        return;
+    }
+
+    event.preventDefault();
+
+    const confirmButton = dialog.querySelector('[data-sign-out-confirm]');
+    const cancelButton = dialog.querySelector('[data-sign-out-cancel]');
+
+    // Submitting via HTMLFormElement.submit() rather than requestSubmit(): submit()
+    // fires no submit event, so the interception above cannot catch its own release
+    // and loop. Escape, the backdrop and Cancel all just close — the platform returns
+    // focus to the button that opened this.
+    const release = () => {
+        cleanUp();
+        dialog.close();
+        form.submit();
+    };
+
+    const dismiss = () => {
+        cleanUp();
+        dialog.close();
+    };
+
+    // Handlers are per-open and removed on close so that opening the dialog twice does
+    // not leave a second release() bound and fire the submit more than once.
+    function cleanUp() {
+        confirmButton?.removeEventListener('click', release);
+        cancelButton?.removeEventListener('click', dismiss);
+        dialog.removeEventListener('click', backdrop);
+        dialog.removeEventListener('close', cleanUp);
+    }
+
+    function backdrop(clickEvent) {
+        if (clickEvent.target === dialog) {
+            dismiss();
+        }
+    }
+
+    confirmButton?.addEventListener('click', release);
+    cancelButton?.addEventListener('click', dismiss);
+    dialog.addEventListener('click', backdrop);
+    dialog.addEventListener('close', cleanUp);
+
+    dialog.showModal();
+});

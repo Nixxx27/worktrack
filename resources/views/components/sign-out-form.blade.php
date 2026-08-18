@@ -1,25 +1,80 @@
 {{--
-    The sign-out form, everywhere it appears.
+    The sign-out form and its confirmation, everywhere sign-out appears.
 
     In the header this button sits in the same row as Board, Dashboard and Settings and
-    is styled like them, so the control that ends your session reads as one more place
-    to go. A mis-aimed click there does not just cost you a login: the drawer's comment
-    box, new-task row and health reason are all deferred wire:model, so they live only
-    in the browser until submitted and go with the session.
+    is styled like them, so the control that ends the session reads as one more place to
+    go. An unguarded mis-click costs the login plus every deferred wire:model draft in
+    the drawer — the comment box, the new-task row, the health reason.
 
     One component rather than three hand-copied forms because the wording is a promise
     about what is about to be lost, and a promise re-typed per page drifts. The same
-    mistake as the five hand-copied navs this header replaced.
+    mistake as the five hand-copied navs the header replaced.
 
-    A native confirm() rather than a styled dialog: it is already the application's
-    confirmation language — wire:confirm in the drawer and the tracker-archive guard
-    raise this same browser dialog — and it needs no JavaScript of its own, which
-    matters because two of the three call sites are plain Blade with no Livewire on
-    the page to hang an Alpine component from.
+    ── why a native <dialog> ───────────────────────────────────────────────────
+    Not Alpine, which is how the drawer's own prompts are built: Alpine arrives with
+    Livewire's injected script, and /pending is a plain Route::view with no Livewire on
+    it at all. An x-data modal there would render a button that does nothing.
+
+    <dialog> also earns its place on the board, where the trigger lives inside a
+    `sticky z-20` header. showModal() promotes to the browser's top layer, so the panel
+    escapes that stacking context instead of fighting it, and Escape, the focus trap and
+    returning focus to the button on close all come from the platform rather than from
+    hand-rolled key handlers.
+
+    The form still posts on its own if the interception never runs — no <dialog> support,
+    or scripts blocked. Sign-out that silently stops working is worse than sign-out that
+    is briefly unguarded, and the app needs JavaScript to draw a board in the first place.
 --}}
-<form method="POST" action="{{ route('logout') }}"
-      onsubmit="return confirm('Sign out of Worktrack? Anything you have typed and not saved will be lost.')"
-      {{ $attributes }}>
+<form method="POST" action="{{ route('logout') }}" data-sign-out {{ $attributes }}>
     @csrf
     {{ $slot }}
 </form>
+
+@once
+    {{-- Rendered once per page and driven by a delegated listener, so the header may
+         re-render underneath it without the dialog losing its handlers. wire:ignore keeps
+         Livewire's morph off markup that holds no Livewire state; it is an inert
+         attribute on the two screens with no Livewire. --}}
+    <dialog id="sign-out-dialog" wire:ignore
+            aria-labelledby="sign-out-title"
+            class="mx-auto mt-16 mb-auto max-h-[calc(100dvh-8rem)] w-[calc(100vw-2rem)] max-w-md overflow-y-auto rounded-2xl border-0 bg-surface p-0 shadow-xl backdrop:bg-royal-900/40">
+        <div class="rounded-t-2xl bg-royal-900 px-5 py-3.5 text-ink-inverse">
+            <h2 id="sign-out-title" class="text-base font-semibold tracking-tight">
+                Sign out of Worktrack?
+            </h2>
+            {{-- Which account, because people sign in here from shared machines and
+                 "am I about to drop the right session?" is the actual question.
+
+                 Mono like the header eyebrows elsewhere, but NOT uppercased the way those
+                 are: an address is a literal string people match character by character,
+                 and DUMP@GMAIL.COM is not what they typed. break-all because the panel is
+                 max-w-md and a long firstname.lastname@ address would otherwise push the
+                 header wider than the dialog. --}}
+            <p class="mt-0.5 font-mono text-[11px] tracking-[0.04em] break-all text-royal-300">
+                {{ auth()->user()?->email }}
+            </p>
+        </div>
+
+        <div class="px-5 py-4">
+            <p class="text-sm leading-relaxed text-ink-soft">
+                Anything you have typed but not saved goes with the session — a comment
+                part-way written, a task you had not added yet, a health note. Work you
+                already saved is untouched, and signing back in takes one click.
+            </p>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 rounded-b-2xl border-t border-line-soft bg-canvas px-5 py-3">
+            {{-- First in the DOM, so the platform's initial focus lands on the harmless
+                 option and a stray Enter does not do the thing this dialog exists to
+                 slow down. --}}
+            <button type="button" autofocus data-sign-out-cancel
+                    class="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-soft transition hover:bg-canvas-sunken hover:text-ink">
+                Stay signed in
+            </button>
+            <button type="button" data-sign-out-confirm
+                    class="rounded-lg bg-royal-900 px-4 py-1.5 text-sm font-medium text-ink-inverse transition hover:bg-royal-800">
+                Sign out
+            </button>
+        </div>
+    </dialog>
+@endonce
