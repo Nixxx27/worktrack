@@ -6,6 +6,7 @@ use App\Models\Comment;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\Notifications\OutboxWriter;
+use App\Support\Mentions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -27,15 +28,6 @@ use Illuminate\Support\Str;
  */
 class CommentService
 {
-    /**
-     * @* matches a display name of one to four words, so "@Maria Clara Santos" works
-     * without requiring usernames the product does not have. Resolution is then done
-     * greedily against the actual member list — longest name first — because "@Maria"
-     * and "@Maria Clara" are both plausible prefixes and only the member list can say
-     * which was meant.
-     */
-    private const MENTION_PATTERN = '/@([\p{L}][\p{L}\'\-\.]*(?:\s+[\p{L}][\p{L}\'\-\.]*){0,3})/u';
-
     public function __construct(
         private ActivityRecorder $activity,
         private OutboxWriter $outbox,
@@ -148,50 +140,33 @@ class CommentService
      */
     public function resolveMentions(Project $project, string $body): Collection
     {
-        if (! preg_match_all(self::MENTION_PATTERN, $body, $matches)) {
-            return collect();
-        }
+        return Mentions::resolve($body, $this->mentionable($project));
+    }
 
-        $candidates = collect($matches[1])
-            ->map(fn (string $c) => mb_strtolower(trim(preg_replace('/\s+/u', ' ', $c) ?? '')))
-            ->filter()
-            ->unique();
-
-        // Full models, NOT a column subset. These instances are handed to the outbox,
-        // which asks them isActive() and reads ->role; a trimmed select leaves those
-        // attributes null, isActive() returns false for everyone, and every mention
-        // notification is silently dropped with no error anywhere. Caught by
-        // ProjectDrawerTest — the failure mode is an absence, so nothing else would.
-        $members = User::query()
+    /**
+     * Everybody a mention on this project is allowed to name.
+     *
+     * Public because the @ picker in the drawer offers this same list, and it has to be
+     * the SAME list: a picker built from a second query is a picker that can offer a
+     * name the matcher will not resolve, which is the original bug wearing a menu.
+     *
+     * Full models, NOT a column subset. These instances are handed to the outbox, which
+     * asks them isActive() and reads ->role; a trimmed select leaves those attributes
+     * null, isActive() returns false for everyone, and every mention notification is
+     * silently dropped with no error anywhere. Caught by ProjectDrawerTest — the failure
+     * mode is an absence, so nothing else would.
+     *
+     * @return Collection<int, User>
+     */
+    public function mentionable(Project $project): Collection
+    {
+        return User::query()
             ->whereIn('id', fn ($q) => $q->select('user_id')
                 ->from('tracker_members')
                 ->where('tracker_id', $project->tracker_id))
             ->where('status', 'active')
+            ->orderBy('name')
             ->get();
-
-        // Longest name first: "@Maria Clara" must win over "@Maria" when both are
-        // members, otherwise the more specific mention silently reaches the wrong person.
-        $byName = $members
-            ->sortByDesc(fn (User $u) => mb_strlen($u->name))
-            ->values();
-
-        $matched = collect();
-
-        foreach ($candidates as $candidate) {
-            $hit = $byName->first(function (User $u) use ($candidate) {
-                $name = mb_strtolower($u->name);
-
-                // Exact, or the candidate begins with the full member name — which is
-                // what makes "@Maria Clara, can you look?" resolve while "@Mar" does not.
-                return $candidate === $name || str_starts_with($candidate, $name.' ');
-            });
-
-            if ($hit && ! $matched->contains('id', $hit->id)) {
-                $matched->push($hit);
-            }
-        }
-
-        return $matched;
     }
 
     /** @return Collection<int, User> the people to notify (never the author) */
