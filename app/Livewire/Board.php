@@ -8,6 +8,7 @@ use App\Models\Step;
 use App\Models\Tracker;
 use App\Models\User;
 use App\Services\Projects\ProjectService;
+use App\Support\SearchTerm;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -371,23 +372,34 @@ class Board extends Component
      * protection, so a Member of three trackers searching "vpn" would see all three
      * boards' cards, plus everything archived, mixed into one column layout.
      *
-     * Hence $q->where(Closure): the disjunction is always parenthesised.
+     * Hence SearchTerm::matchAny(), which is the only spelling of a text search in this
+     * codebase and always parenthesises. It used to be an inline closure here; it moved
+     * out when FR-4.10's universal search needed the same disjunction over four tables,
+     * because the second hand-written copy of this reasoning is the one that gets it
+     * wrong — and inside a whereHas the predicate an unnested OR dissolves is the
+     * correlation itself, which is a cross-tracker leak rather than an archived card.
      * ═══════════════════════════════════════════════════════════════════════════════
+     *
+     * SCOPE NOTE: this searches the two fields the CARD SHOWS, while FR-4.10's search
+     * also reads comments, checklist items and labels. Deliberately not the same reach.
+     * A filter answers "hide the cards I did not mean", and a card surviving it because
+     * of a word in a comment is a card whose visible text does not contain the term —
+     * on a board there is nowhere to explain why it stayed. The palette has a line under
+     * every result for exactly that, so the deep reach lives where it can be justified
+     * to the reader.
      */
     private function filtered(): Builder
     {
-        $term = trim($this->search);
         $selected = $this->selected;
 
         return Project::where('tracker_id', $this->tracker->id)
             ->whereNull('archived_at')
-            ->when($term !== '', function (Builder $q) use ($term) {
-                $like = '%'.str_replace(['%', '_'], ['\%', '\_'], $term).'%';
-
-                $q->where(fn (Builder $w) => $w
-                    ->where('name', 'like', $like)
-                    ->orWhere('description', 'like', $like));
-            })
+            // Qualified column names: harmless here, required the moment a filter below
+            // adds a join, and one spelling is cheaper than remembering which case applies.
+            ->when(
+                SearchTerm::from($this->search),
+                fn (Builder $q, SearchTerm $term) => $term->matchAny($q, ['projects.name', 'projects.description'])
+            )
             // Each of these is a whereIn over values $this->selected has already
             // validated, so a hand-edited ?health=nonsense contributes nothing and the
             // board comes back unfiltered rather than empty — an empty board reads as

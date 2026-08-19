@@ -73,6 +73,16 @@
                  for two more places to work. --}}
             <span class="mx-2 hidden h-4 w-px bg-royal-700 sm:block" aria-hidden="true"></span>
 
+            {{-- FR-4.10 — the first tool, and in the header rather than on the board
+                 because the question it answers ("where is that thing") is asked from
+                 wherever you happen to be, including the admin screens. Mounted here
+                 once for the same reason the rest of this bar is: five hand-placed
+                 copies is how a control ends up missing from one page.
+
+                 It renders nothing but a button until opened, so the cost of being on
+                 every screen is one element and no query. --}}
+            <livewire:global-search />
+
             @if ($settingsUrl)
                 <a href="{{ $settingsUrl }}"
                    @class([

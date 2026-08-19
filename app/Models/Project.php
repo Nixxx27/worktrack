@@ -84,6 +84,22 @@ class Project extends Model
         return $this->hasMany(ProjectStepMovement::class);
     }
 
+    /**
+     * Comments on this card.
+     *
+     * Added for universal search (FR-4.10), which has to be able to ask "does this card
+     * have a comment mentioning X" as a subquery rather than by loading every thread.
+     * The drawer reads comments through CommentService and does not need this.
+     *
+     * Comment is soft-deleted, so the relation excludes withdrawn comments without
+     * asking: search must never resurface a card only findable through a comment its
+     * author deleted.
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(Comment::class);
+    }
+
     /** Restricted to tracker members by a composite FK — a crafted POST cannot defeat it (FR-4.3). */
     public function assignees(): BelongsToMany
     {
