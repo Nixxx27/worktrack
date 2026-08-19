@@ -21,11 +21,22 @@
     returning focus to the button on close all come from the platform rather than from
     hand-rolled key handlers.
 
-    The form still posts on its own if the interception never runs — no <dialog> support,
-    or scripts blocked. Sign-out that silently stops working is worse than sign-out that
-    is briefly unguarded, and the app needs JavaScript to draw a board in the first place.
+    ── two layers, and why ─────────────────────────────────────────────────────
+    The onsubmit confirm() below is the BASELINE, not a leftover. It is the guard that
+    needs no build step, and it exists because this app has already shipped a deploy
+    that pushed Blade without rebuilding Vite: production served the new form tagged
+    data-sign-out alongside a JS bundle that had never heard of it, nothing intercepted
+    the submit, and sign-out silently went back to being instant.
+
+    A guard that lives only in app.js is a guard a partial deploy can delete. So the
+    HTML asks on its own, and app.js UPGRADES that to the real dialog by intercepting
+    in the capture phase and stopping the event before the inline handler can see it —
+    which is why you never get both prompts. Stale assets cost you the nicer dialog,
+    never the question itself.
 --}}
-<form method="POST" action="{{ route('logout') }}" data-sign-out {{ $attributes }}>
+<form method="POST" action="{{ route('logout') }}" data-sign-out
+      onsubmit="return confirm('Sign out of Worktrack? Anything you have typed and not saved will be lost.')"
+      {{ $attributes }}>
     @csrf
     {{ $slot }}
 </form>

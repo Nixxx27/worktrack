@@ -69,14 +69,20 @@ describe('the sign-out guard', function () {
     // in the drawer — the comment box, the new-task row, the health reason.
     //
     // The forms are located and then inspected, rather than the page being searched for
-    // a string, so re-inlining a form somewhere without the hook still fails here.
-    it('routes every sign-out through the confirmation dialog', function () {
+    // a string, so re-inlining a form somewhere without the guards still fails here.
+    //
+    // BOTH layers are asserted on purpose. The inline confirm() is the one that survives
+    // a deploy which pushes Blade without running `npm run build` — that deploy has
+    // happened, and it turned sign-out back into a single click. If a later change moves
+    // the guard wholly into app.js again, this fails rather than production doing so.
+    it('guards every sign-out form in the HTML and hooks it for the dialog', function () {
         $screens = [
             '/board' => makeUser('nav@gmail.com'),
             '/pending' => makeUser('waiting@gmail.com', UserRole::Viewer, UserStatus::Pending),
         ];
 
-        $unhooked = [];
+        $missingHook = [];
+        $missingBaseline = [];
         $forms = 0;
 
         foreach ($screens as $path => $user) {
@@ -92,12 +98,18 @@ describe('the sign-out guard', function () {
                 $forms++;
 
                 if (! str_contains($form, 'data-sign-out')) {
-                    $unhooked[] = $path;
+                    $missingHook[] = $path;
+                }
+
+                // Build-independent, so it is the layer that cannot be deployed away.
+                if (! str_contains($form, 'onsubmit="return confirm(')) {
+                    $missingBaseline[] = $path;
                 }
             }
         }
 
-        expect($unhooked)->toBe([])
+        expect($missingHook)->toBe([])
+            ->and($missingBaseline)->toBe([])
             ->and($forms)->toBe(count($screens));
     });
 

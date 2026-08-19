@@ -212,13 +212,19 @@ window.mentionBox = (names) => ({
 /**
  * Confirmation for sign-out.
  *
- * Progressive enhancement over a real POST form: the form is what actually signs you
- * out, and this only steps in front of it. If the browser has no <dialog>, the submit
- * runs as before — an unguarded sign-out beats a sign-out button that does nothing.
+ * Upgrades the form's inline onsubmit confirm() into the real dialog. The inline guard
+ * is the baseline precisely because it needs no build step; this file is the part a
+ * deploy that skips `npm run build` can leave stale, and it has done exactly that once
+ * already — production ran the new form against an old bundle and signed people out on
+ * the first click.
  *
- * The listener is delegated from the document rather than bound to the button, because
- * the header renders inside a Livewire component and a bound handler would not survive
- * the morph. It is also why the dialog markup carries wire:ignore.
+ * Hence the capture phase and stopPropagation(): the event is taken before it reaches
+ * the form, so the inline confirm() never runs and nobody sees two prompts. Drop this
+ * bundle and the inline guard simply takes over again.
+ *
+ * Delegated from the document rather than bound to the button, because the header
+ * renders inside a Livewire component and a bound handler would not survive the morph.
+ * It is also why the dialog markup carries wire:ignore.
  */
 document.addEventListener('submit', (event) => {
     const form = event.target.closest?.('form[data-sign-out]');
@@ -228,15 +234,18 @@ document.addEventListener('submit', (event) => {
         return;
     }
 
+    // Before the form's own onsubmit, so the native confirm() stays out of the way.
+    event.stopPropagation();
     event.preventDefault();
 
     const confirmButton = dialog.querySelector('[data-sign-out-confirm]');
     const cancelButton = dialog.querySelector('[data-sign-out-cancel]');
 
     // Submitting via HTMLFormElement.submit() rather than requestSubmit(): submit()
-    // fires no submit event, so the interception above cannot catch its own release
-    // and loop. Escape, the backdrop and Cancel all just close — the platform returns
-    // focus to the button that opened this.
+    // fires no submit event, so neither this interception nor the form's own inline
+    // confirm() sees the release — no loop, and no second prompt on the way out.
+    // Escape, the backdrop and Cancel all just close; the platform returns focus to
+    // the button that opened this.
     const release = () => {
         cleanUp();
         dialog.close();
@@ -269,4 +278,4 @@ document.addEventListener('submit', (event) => {
     dialog.addEventListener('close', cleanUp);
 
     dialog.showModal();
-});
+}, true);
