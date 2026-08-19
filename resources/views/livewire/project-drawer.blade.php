@@ -875,9 +875,10 @@
                         @can('createComment', $project)
                             <form wire:submit="addComment" class="flex-none px-4 pb-3">
                                 <label for="dr-comment" class="sr-only">Comment</label>
-                                <textarea id="dr-comment" wire:model="commentBody" rows="2"
-                                          placeholder="Write a comment… type @ and a colleague's name to notify them."
-                                          class="w-full rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm transition focus:border-royal-600 focus:ring-2 focus:ring-royal-600/20 focus:outline-none"></textarea>
+                                <x-mention-field :names="$this->mentionNames" field="dr-comment"
+                                                 wire:model="commentBody" rows="2"
+                                                 placeholder="Write a comment… type @ to name a colleague and notify them."
+                                                 class="w-full rounded-xl border border-line-strong bg-surface px-3 py-2 text-sm transition focus:border-royal-600 focus:ring-2 focus:ring-royal-600/20 focus:outline-none" />
                                 @error('commentBody') <p class="mt-1 text-xs text-health-stalled">{{ $message }}</p> @enderror
                                 <div class="mt-1.5 flex items-center justify-between gap-3">
                                     <p class="text-[11px] text-ink-faint">Mentions only match members of this tracker.</p>
@@ -921,8 +922,9 @@
 
                                         @if ($editingCommentId === $comment->id)
                                             <form wire:submit="saveComment" class="mt-2">
-                                                <textarea wire:model="editingCommentBody" rows="3" aria-label="Edit comment"
-                                                          class="w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm"></textarea>
+                                                <x-mention-field :names="$this->mentionNames" field="dr-comment-edit-{{ $comment->id }}"
+                                                                 wire:model="editingCommentBody" rows="3" aria-label="Edit comment"
+                                                                 class="w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm" />
                                                 @error('editingCommentBody') <p class="mt-1 text-xs text-health-stalled">{{ $message }}</p> @enderror
                                                 <div class="mt-1.5 flex justify-end gap-2">
                                                     <button type="button" wire:click="cancelEditingComment"
@@ -935,11 +937,17 @@
                                                  "word" and without it the URL runs straight out of the
                                                  card and over the drawer's edge.
 
-                                                 Linkify::text() returns an HtmlString, so this stays a
-                                                 normal escaped echo: the only markup in it is the anchor
-                                                 the helper wrote, and every piece of what the author
-                                                 typed went through e() first. --}}
-                                            <p class="linked-text mt-1.5 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-ink-soft">{{ \App\Support\Linkify::text($comment->body) }}</p>
+                                                 CommentText::render() returns an HtmlString, so this
+                                                 stays a normal escaped echo: the only markup in it is
+                                                 the anchor and the mention span the helpers wrote, and
+                                                 every piece of what the author typed went through e()
+                                                 first.
+
+                                                 It is handed the STORED mentions, not the current member
+                                                 list, so a highlight here means an email went — and a
+                                                 mention that matched nobody stays plain text, which is
+                                                 the only signal the author ever gets that it missed. --}}
+                                            <p class="linked-text mt-1.5 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-ink-soft">{{ \App\Support\CommentText::render($comment->body, $comment->mentions) }}</p>
 
                                             <div class="mt-1 flex items-center gap-1">
                                                 @can('update', $comment)

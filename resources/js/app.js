@@ -67,6 +67,149 @@ window.boardColumn = (stepId) => ({
 });
 
 /**
+ * The @ token the caret is currently sitting inside, if it is sitting inside one.
+ *
+ * The lookbehind is the same rule the server matcher uses and exists for the same
+ * reason: an @ that follows a letter or a digit belongs to an email address, and
+ * "nikko@example.com" must not open a menu offering to complete "example.com".
+ *
+ * Spaces are inside the class on purpose — "Krystal Gail" has to keep the menu open
+ * across the space, or the list closes exactly when it is being narrowed. It is
+ * self-limiting rather than capped: run past the end of anybody's name and nothing
+ * matches, so the menu closes on its own.
+ */
+const MENTION_TRIGGER = /(?:^|[^\p{L}\p{N}])@([\p{L}\p{N}'\-. ]{0,40})$/u;
+
+/**
+ * The @ picker in a comment box.
+ *
+ * Discovery, not plumbing. The server resolves a hand-typed "@jonathan" to Jonathan
+ * Cruz without any of this, so a stale bundle costs the menu and nothing else — see
+ * the note in components/mention-field.blade.php. What it buys is that nobody has to
+ * know the feature exists, or remember how a colleague's name is spelled in the admin
+ * screen, to use it.
+ */
+window.mentionBox = (names) => ({
+    names,
+    open: false,
+    query: '',
+    active: 0,
+
+    /** Where the @ of the token being completed sits in the field. */
+    at: -1,
+
+    /**
+     * Set while choose() writes to the field, because writing to the field fires the
+     * input event this component listens to. Without it, inserting "@Jonathan Cruz "
+     * immediately re-reads the caret, finds a perfectly good mention token under it and
+     * reopens the menu on the name it has just finished inserting.
+     */
+    locked: false,
+
+    get matches() {
+        const needle = this.query.trim().toLowerCase();
+
+        const pool = needle === ''
+            ? this.names
+            /* Any part of the name, not just the first: people look colleagues up by
+               surname at least as often, and the picker inserts the full name either
+               way, so being looser here can never produce something the server then
+               fails to resolve. */
+            : this.names.filter((name) => {
+                const folded = name.toLowerCase();
+
+                return folded.startsWith(needle)
+                    || folded.split(' ').some((part) => part.startsWith(needle));
+            });
+
+        return pool.slice(0, 8);
+    },
+
+    sync() {
+        if (this.locked) {
+            return;
+        }
+
+        const field = this.$refs.field;
+        const found = field.value.slice(0, field.selectionStart).match(MENTION_TRIGGER);
+
+        if (! found || found[1].startsWith(' ')) {
+            this.open = false;
+            this.query = '';
+
+            return;
+        }
+
+        /* Only when the token itself changed. sync() also runs on plain caret moves,
+           and resetting the highlight every time would undo an arrow key on its way
+           back up through keyup. */
+        if (found[1] !== this.query) {
+            this.query = found[1];
+            this.active = 0;
+        }
+
+        this.at = field.selectionStart - found[1].length - 1;
+        this.open = this.matches.length > 0;
+    },
+
+    choose(name) {
+        const field = this.$refs.field;
+        const tail = field.value.slice(field.selectionStart);
+        /* A space after the name so the sentence can carry on being typed — unless the
+           line already has one there, because picking a name out of the middle of a
+           sentence should not leave a gap the author has to go back and close. */
+        const head = `${field.value.slice(0, this.at)}@${name}${/^\s/.test(tail) ? '' : ' '}`;
+
+        this.locked = true;
+        field.value = head + tail;
+        field.setSelectionRange(head.length, head.length);
+        /* Livewire reads the field through its own input listener, so a value assigned
+           in script is a value it never sees unless the event is raised by hand. */
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        this.locked = false;
+
+        this.open = false;
+        this.query = '';
+        field.focus();
+    },
+
+    key(event) {
+        if (! this.open) {
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            /* The drawer closes on Escape from the window, so this one is taken out of
+               the air. Dismissing a menu must never also discard the comment. */
+            event.preventDefault();
+            event.stopPropagation();
+            this.open = false;
+
+            return;
+        }
+
+        const options = this.matches;
+
+        if (! options.length) {
+            return;
+        }
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            this.active = (this.active + 1) % options.length;
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            this.active = (this.active - 1 + options.length) % options.length;
+        } else if (event.key === 'Enter' || event.key === 'Tab') {
+            /* Enter is free to mean "choose" here: this is a textarea, so Enter inserts
+               a newline rather than submitting, and there is no submission to steal. */
+            event.preventDefault();
+            this.choose(options[this.active]);
+        }
+    },
+});
+
+/**
  * Confirmation for sign-out.
  *
  * Progressive enhancement over a real POST form: the form is what actually signs you

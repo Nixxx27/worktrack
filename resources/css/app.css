@@ -154,6 +154,23 @@
 }
 
 /*
+ * A mention that actually reached somebody.
+ *
+ * Quiet on purpose — a comment is prose, and a thread where every second word is a
+ * chip is a thread nobody reads. It only has to be different ENOUGH: the whole point
+ * is that "@jonathan" landing and "@jonathon" missing must not look identical, which
+ * is what they did for as long as this class did not exist. Powder rather than a
+ * status colour, because being named is not a state of the work.
+ */
+.linked-text .mention {
+    border-radius: 4px;
+    background-color: var(--color-powder-200);
+    padding-inline: 3px;
+    color: var(--color-royal-800);
+    font-weight: 500;
+}
+
+/*
  * Inputs that grow to fit their content, used by the inline step-rename fields.
  * field-sizing is not universal yet, so the `size` attribute remains the fallback.
  */

@@ -271,10 +271,34 @@ class ProjectDrawer extends Component
     {
         $project = $this->project;
 
+        // `mentions` is eager-loaded because every comment is rendered through it: the
+        // snapshot of who was actually notified is what decides which @ in the body gets
+        // highlighted, so a lazy relation here would be one query per comment on a
+        // thread that is usually the longest thing on the screen.
         return $project
             ? Comment::where('project_id', $project->id)
-                ->with('author:id,name')
+                ->with(['author:id,name', 'mentions'])
                 ->orderBy('created_at')->orderBy('id')->get()
+            : collect();
+    }
+
+    /**
+     * The names the @ picker offers, straight from the matcher's own member list.
+     *
+     * Deliberately not assembled here. A picker that builds its own list is a picker
+     * that can offer somebody the resolver will not match — the original bug with a
+     * menu in front of it — so this asks CommentService the same question a posted
+     * comment asks it.
+     *
+     * @return Collection<int, string>
+     */
+    #[Computed]
+    public function mentionNames()
+    {
+        $project = $this->project;
+
+        return $project
+            ? app(CommentService::class)->mentionable($project)->pluck('name')->values()
             : collect();
     }
 
