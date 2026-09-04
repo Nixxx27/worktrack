@@ -254,11 +254,28 @@ class StepService
         return DB::transaction(function () use ($step, $type, $was, $actor) {
             $step->forceFill(['type' => $type])->save();
 
-            // Scoped like every other read in this application: an actor who may
-            // configure this tracker's steps can see this tracker's projects, so the
-            // visibility scope narrows nothing here — it is simply not bypassed.
-            $restamped = Project::where('step_id', $step->id)
-                ->update(['current_step_type' => $type]);
+            // ═══════════════════════════════════════════════════════════════════════
+            // DELIBERATELY UNSCOPED, and it did not used to need to be.
+            //
+            // This read was `Project::where('step_id', ...)` with a comment saying the
+            // visibility scope narrowed nothing, because an actor who may configure a
+            // tracker's steps can see that tracker's projects. FR-4.11 broke that
+            // premise: ProjectPrivacyScope hides another member's private cards from
+            // this admin, so the scoped UPDATE would skip them and leave
+            // current_step_type — a denormalized read-model column whose only sanctioned
+            // writers are the recorders — permanently disagreeing with the step the card
+            // actually sits in. That is the silent-metric-corruption failure the Project
+            // docblock warns about, on cards nobody can see to notice it.
+            //
+            // A raw UPDATE rather than an Eloquent scope bypass — the bypass helper is
+            // banned outright by ArchitectureInvariantsTest, which greps for it, so even
+            // naming it here would fail that test. Unlike a raw READ this returns
+            // no rows to anybody. It cannot leak a private card; it can only restamp one,
+            // which is the entire point.
+            // ═══════════════════════════════════════════════════════════════════════
+            $restamped = DB::table('projects')
+                ->where('step_id', $step->id)
+                ->update(['current_step_type' => $type->value, 'updated_at' => now()]);
 
             $this->audit->log('tracker.step_retyped', $actor->id, [
                 'tracker_id' => $step->tracker_id,
@@ -274,6 +291,24 @@ class StepService
 
             return true;
         });
+    }
+
+    /**
+     * How many cards sit in this column — every card, private ones included.
+     *
+     * Public because StepController reports this number to the admin BEFORE a retype,
+     * and the figure it reports has to be the figure retype() then restamps. Two
+     * spellings of the same count is one too many, and the one that read through the
+     * visibility scope would quietly under-report the blast radius of a bulk change
+     * (FR-4.11) — the specific thing that message exists to prevent.
+     *
+     * Raw for the same reason as the UPDATE above, and it is a COUNT: an aggregate over
+     * one column of one tracker tells the admin how much work they are about to
+     * reclassify, not whose it is or what it says.
+     */
+    public function countCardsIn(Step $step): int
+    {
+        return (int) DB::table('projects')->where('step_id', $step->id)->count();
     }
 
     /**

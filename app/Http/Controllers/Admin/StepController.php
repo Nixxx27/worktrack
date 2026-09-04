@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Enums\StepType;
-use App\Models\Project;
 use App\Models\Step;
 use App\Models\Tracker;
 use App\Services\Trackers\StepService;
@@ -143,7 +142,7 @@ class StepController
         // Counted BEFORE the write, and reported: this is the one step edit that
         // reclassifies cards nobody touched, and an admin who is not told how many is
         // being asked to trust a silent bulk change.
-        $affected = Project::where('step_id', $step->id)->count();
+        $affected = $steps->countCardsIn($step);
 
         if (! $steps->retype($step, $type, $request->user())) {
             return back();

@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use App\Authorization\Scopes\ProjectPrivacyScope;
 use App\Authorization\Scopes\TrackerVisibilityScope;
 use App\Enums\HealthSource;
 use App\Enums\ProjectHealth;
+use App\Enums\ProjectVisibility;
 use App\Enums\StepType;
 use App\Models\Concerns\BelongsToTracker;
 use Database\Factories\ProjectFactory;
@@ -26,7 +28,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * card. They must ONLY be written by the movement recorder and activity recorder —
  * any other writer silently corrupts every metric downstream with no error.
  */
-#[ScopedBy(TrackerVisibilityScope::class)]
+#[ScopedBy([TrackerVisibilityScope::class, ProjectPrivacyScope::class])]
 class Project extends Model
 {
     /** @use HasFactory<ProjectFactory> */
@@ -38,6 +40,7 @@ class Project extends Model
     {
         return [
             'health' => ProjectHealth::class,
+            'visibility' => ProjectVisibility::class,
             'health_source' => HealthSource::class,
             'current_step_type' => StepType::class,
             'start_date' => 'date',
@@ -126,6 +129,35 @@ class Project extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->whereNull('archived_at');
+    }
+
+    /** FR-4.11 — a card only its owner can see. */
+    public function isPrivate(): bool
+    {
+        return $this->visibility === ProjectVisibility::Private;
+    }
+
+    /**
+     * Shared cards only — the shape every AGGREGATE has to use.
+     *
+     * ProjectPrivacyScope already hides other people's private cards, so this exists
+     * for the one case the scope cannot decide on its own: the viewer's OWN private
+     * work. On the board that work must appear, which is the whole feature. In a
+     * metric it must not, for two separate reasons.
+     *
+     * The first is that a private card is not team throughput. A cycle time that
+     * silently includes one person's private notes is a figure two people reading the
+     * same dashboard disagree about, with nothing on screen to explain why.
+     *
+     * The second is a leak. Metrics are cached under AccessContext::cacheKey(), which
+     * distinguishes viewers only by their TRACKER SET — so two members of the same
+     * trackers share a cache entry, and the first one to warm it would serve their own
+     * private cards' numbers to the second. Excluding private work here is what keeps
+     * that key correct; see the note on cacheKey().
+     */
+    public function scopeExcludingPrivate(Builder $query): Builder
+    {
+        return $query->where($this->qualifyColumn('visibility'), ProjectVisibility::Tracker->value);
     }
 
     /** The open movement row — the one with no exit. At most one exists, by DB invariant. */

@@ -168,6 +168,26 @@ it('keeps raw reads of tracker-owned tables inside the files that justify them',
     // that the seventh path out is a decision someone makes on purpose.
     // ═══════════════════════════════════════════════════════════════════════════════
     $allowed = [
+        // The privacy scope itself (FR-4.11). It reads `projects` raw because reaching
+        // the parent card through the Project MODEL would re-enter the very scope being
+        // applied, and that recursion has no base case. Nothing can widen its predicate:
+        // the whole EXISTS is written inside the scope and no caller can append to it.
+        'app/Authorization/Scopes/ProjectPrivacyScope.php',
+
+        // FR-4.11 forced three privacy-BLIND writes, and SystemContext::run() cannot
+        // serve them: it throws inside a request carrying a session, and all three run
+        // from admin screens. Each is a write or an aggregate that returns no rows to
+        // anybody — the raw-builder hazards this test guards (unscoped rows, a
+        // dissolvable predicate) do not apply to an UPDATE or a COUNT(*):
+        //   · StepService restamps current_step_type on every card in a column,
+        //     private ones included, or a denormalized metric column silently rots.
+        //   · ProjectService reads MAX(board_position) so a new card cannot land on
+        //     top of a private one and tie its position.
+        //   · TrackerService counts live work before archiving, which FR-2.8 exists
+        //     to report accurately.
+        'app/Services/Trackers/StepService.php',
+        'app/Services/Projects/ProjectService.php',
+
         'app/Livewire/ActivityLog.php',
         'app/Services/Auth/AuditLogger.php',
         'app/Services/Notifications/OutboxDispatcher.php',

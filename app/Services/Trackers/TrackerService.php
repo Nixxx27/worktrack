@@ -124,6 +124,13 @@ class TrackerService
             // Ownership is a plain FK for the same MySQL reason, so it needs the same
             // explicit handling. A project left ownerless is visible on the board rather
             // than quietly orphaned.
+            // NOTE (FR-4.11): both reads below run through the visibility scope, so a
+            // private card owned by the person being removed is left alone rather than
+            // orphaned. That is the better of two bad options — clearing its owner would
+            // hide it from every user including its owner, permanently and with no route
+            // back through any screen — but it does leave a card owned by a non-member,
+            // reachable only from the database. Recorded as a known limitation in
+            // REQUIREMENTS FR-4.11 rather than silently relied upon.
             $ownedProjects = Project::where('tracker_id', $tracker->id)
                 ->where('owner_user_id', $user->id)
                 ->pluck('id');
@@ -153,9 +160,15 @@ class TrackerService
     public function archive(Tracker $tracker, User $actor): int
     {
         return DB::transaction(function () use ($tracker, $actor) {
-            $liveProjects = Project::where('tracker_id', $tracker->id)
+            // Privacy-blind (FR-4.11): the whole requirement is "archiving requires
+            // knowing how much live work it hides", and a figure that silently omitted
+            // members' private cards would be the wrong number for the one decision it
+            // exists to inform. It is an aggregate — a count of live work, not a list —
+            // and this file already reads projects raw for the neighbouring writes.
+            $liveProjects = (int) DB::table('projects')
+                ->where('tracker_id', $tracker->id)
                 ->whereNull('archived_at')
-                ->where('current_step_type', '!=', StepType::Terminal)
+                ->where('current_step_type', '!=', StepType::Terminal->value)
                 ->count();
 
             $tracker->forceFill([

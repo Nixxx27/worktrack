@@ -313,9 +313,37 @@
                                              if (Math.hypot($event.clientX - downX, $event.clientY - downY) > 6) return;
                                              $wire.openProject('{{ $project->public_id }}')
                                          "
-                                         class="group cursor-grab rounded-lg border border-line bg-surface px-2.5 py-2 shadow-xs transition hover:border-powder-400 hover:shadow-sm active:cursor-grabbing">
+                                         @class([
+                                             'group cursor-grab rounded-lg border px-2.5 py-2 shadow-xs transition hover:shadow-sm active:cursor-grabbing',
+                                             // FR-4.11. A private card should be findable in
+                                             // peripheral vision — you scan a column for the one
+                                             // that is yours alone, and a 14px glyph beside the
+                                             // title does not survive that scan. The tint and the
+                                             // navy edge do; the ONLY ME chip below carries the
+                                             // meaning, so nothing here depends on seeing colour.
+                                             'border-royal-200 border-l-[3px] border-l-royal-800 bg-powder-100' => $project->isPrivate(),
+                                             'border-line bg-surface hover:border-powder-400' => ! $project->isPrivate(),
+                                         ])>
 
                                     <div class="flex items-start gap-1.5">
+                                        {{-- FR-4.11 — the one thing on this card that tells you
+                                             nobody else is looking at it. Persistent rather than
+                                             hover-revealed, and before the title rather than after:
+                                             on a board of otherwise identical cards, the reason to
+                                             mark a private one is so you never write in it under
+                                             the impression the team can see it. --}}
+                                        @if ($project->isPrivate())
+                                            <span class="mt-0.5 shrink-0 text-royal-800"
+                                                  title="Only me — hidden from everyone else on this tracker">
+                                                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+                                                     stroke-linecap="round" stroke-linejoin="round" class="size-3.5" aria-hidden="true">
+                                                    <rect x="3.25" y="7" width="9.5" height="6.25" rx="1.5" />
+                                                    <path d="M5.5 7V4.75a2.5 2.5 0 0 1 5 0V7" />
+                                                </svg>
+                                                <span class="sr-only">Private project.</span>
+                                            </span>
+                                        @endif
+
                                         {{-- The title stays a button. Pointer users get the whole
                                              card, but a pointer guard is unreachable by keyboard,
                                              and this is what puts the card in the tab order at
@@ -360,6 +388,18 @@
                                          screen. gap-x/gap-y because the pair of chips wraps before the
                                          counts do in a narrow column. --}}
                                     <div class="tnum mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[11px] text-ink-faint">
+                                        {{-- Before health, and solid navy rather than a pastel:
+                                             the health and priority chips answer "how is this
+                                             going", and this one answers "who is this for" —
+                                             a different question, so it reads as chrome rather
+                                             than as a third status. --}}
+                                        @if ($project->isPrivate())
+                                            <span class="rounded-full bg-royal-900 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-ink-inverse"
+                                                  title="Only me — hidden from everyone else on this tracker, activity log included">
+                                                Only me
+                                            </span>
+                                        @endif
+
                                         {{-- The word is part of the flag, not a tooltip: colour
                                              alone must never be the carrier of a state. --}}
                                         <span class="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider {{ $tone }}">

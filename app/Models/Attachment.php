@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Authorization\Scopes\ProjectPrivacyScope;
 use App\Authorization\Scopes\TrackerVisibilityScope;
 use App\Models\Concerns\BelongsToTracker;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
@@ -23,7 +24,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * attachment to task to project to tracker. That traversal is exactly the shape of
  * code where an isolation bug hides.
  */
-#[ScopedBy(TrackerVisibilityScope::class)]
+#[ScopedBy([TrackerVisibilityScope::class, ProjectPrivacyScope::class])]
 class Attachment extends Model
 {
     use BelongsToTracker, HasUlids, SoftDeletes;

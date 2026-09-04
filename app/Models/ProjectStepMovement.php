@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Authorization\Scopes\ProjectPrivacyScope;
 use App\Authorization\Scopes\TrackerVisibilityScope;
 use App\Enums\StepType;
 use App\Models\Concerns\BelongsToTracker;
@@ -23,7 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * here by design: writing them from PHP would reintroduce exactly the drift the
  * generated columns exist to make impossible.
  */
-#[ScopedBy(TrackerVisibilityScope::class)]
+#[ScopedBy([TrackerVisibilityScope::class, ProjectPrivacyScope::class])]
 class ProjectStepMovement extends Model
 {
     /** @use HasFactory<ProjectStepMovementFactory> */

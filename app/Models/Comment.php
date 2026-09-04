@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Authorization\Scopes\ProjectPrivacyScope;
 use App\Authorization\Scopes\TrackerVisibilityScope;
 use App\Models\Concerns\BelongsToTracker;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
@@ -18,7 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * agreement. The activity row recording the deletion is not enough on its own — it
  * lives on a different screen from the thread it changed.
  */
-#[ScopedBy(TrackerVisibilityScope::class)]
+#[ScopedBy([TrackerVisibilityScope::class, ProjectPrivacyScope::class])]
 class Comment extends Model
 {
     use BelongsToTracker, SoftDeletes;

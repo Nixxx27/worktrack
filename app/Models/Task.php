@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Authorization\Scopes\ProjectPrivacyScope;
 use App\Authorization\Scopes\TrackerVisibilityScope;
 use App\Models\Concerns\BelongsToTracker;
 use Database\Factories\TaskFactory;
@@ -20,7 +21,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * hard-deleted the task row when a member was removed. Membership is enforced in
  * the application layer instead (FR-5.4).
  */
-#[ScopedBy(TrackerVisibilityScope::class)]
+#[ScopedBy([TrackerVisibilityScope::class, ProjectPrivacyScope::class])]
 class Task extends Model
 {
     /** @use HasFactory<TaskFactory> */

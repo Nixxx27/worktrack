@@ -11,6 +11,7 @@ use App\Models\Task;
 use App\Models\User;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -121,6 +122,15 @@ class OutboxWriter
             return 0;
         }
 
+        // FR-4.11. This method takes its recipient directly rather than resolving one,
+        // so it needs its own guard: the mention picker offers every tracker member,
+        // and a mention mail carries a 200-character excerpt of the comment plus the
+        // card's name. On a private card that is the contents of the thing being
+        // hidden, sent to someone who cannot open the link it arrives with.
+        if ($project->isPrivate() && $recipient->id !== $project->owner_user_id) {
+            return 0;
+        }
+
         $isMember = DB::table('tracker_members')
             ->where('tracker_id', $project->tracker_id)
             ->where('user_id', $recipient->id)
@@ -181,6 +191,28 @@ class OutboxWriter
      */
     private function resolveRecipients(Project $project, ?User $actor): array
     {
+        // ═══════════════════════════════════════════════════════════════════════════
+        // FR-4.11 — a private card notifies its owner and NOBODY else.
+        //
+        // This is the one leak that no scope could ever have closed. Recipients are
+        // resolved here through raw builders and a hardcoded admin merge, so a private
+        // card left alone would keep mailing every admin in the company its title, its
+        // step names and its comment text — the card hidden on every screen while its
+        // contents arrived in an inbox. The setting would be a lie told by the UI.
+        //
+        // Note what this collapses to in practice: the owner is the only interested
+        // party a private card can have, and the actor is excluded below, so acting on
+        // your own private card mails no one at all. The exception that makes the
+        // branch worth having is the stall detector, which acts as the system and
+        // therefore still reaches the owner — the reminder they put it on a board for.
+        // ═══════════════════════════════════════════════════════════════════════════
+        if ($project->isPrivate()) {
+            return $this->activeUnmuted(
+                collect([$project->owner_user_id])->filter()->reject(fn ($id) => $id === $actor?->id),
+                $project,
+            );
+        }
+
         $memberIds = DB::table('tracker_members')
             ->where('tracker_id', $project->tracker_id)
             ->pluck('user_id');
@@ -200,6 +232,21 @@ class OutboxWriter
 
         $ids = $interested->merge($admins)->unique()->reject(fn ($id) => $id === $actor?->id);
 
+        return $this->activeUnmuted($ids, $project);
+    }
+
+    /**
+     * The shared tail of recipient resolution: active accounts, minus this tracker's mutes.
+     *
+     * Extracted so the private-card branch above cannot drift from the ordinary one —
+     * a private card must still respect a suspended account and a muted tracker, and a
+     * second hand-written copy of those two rules is the one that forgets a rule.
+     *
+     * @param  Collection<int, mixed>  $ids
+     * @return array<int,User>
+     */
+    private function activeUnmuted($ids, Project $project): array
+    {
         if ($ids->isEmpty()) {
             return [];
         }

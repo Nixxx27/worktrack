@@ -58,6 +58,22 @@
                                 {{ $project->tracker->name }} · {{ $project->step->name }}
                             </p>
                             <h2 id="drawer-title" class="mt-0.5 text-lg font-semibold leading-snug">{{ $project->name }}</h2>
+
+                            {{-- FR-4.11 — stated in full, once, where the card is actually read.
+                                 The board has room for two words; this is where a person writes
+                                 a comment, and the one thing they need to know before doing so
+                                 is who will see it. Powder on navy rather than the board's
+                                 inverse pairing, because the header is already royal-900. --}}
+                            @if ($project->isPrivate())
+                                <p class="mt-1.5 inline-flex items-center gap-1.5 rounded-full bg-powder-300 py-0.5 pl-1.5 pr-2.5 text-[11px] font-medium text-royal-900">
+                                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"
+                                         stroke-linecap="round" stroke-linejoin="round" class="size-3.5" aria-hidden="true">
+                                        <rect x="3.25" y="7" width="9.5" height="6.25" rx="1.5" />
+                                        <path d="M5.5 7V4.75a2.5 2.5 0 0 1 5 0V7" />
+                                    </svg>
+                                    Only me — nobody else sees this card, its comments or its activity
+                                </p>
+                            @endif
                         </div>
 
                         <div class="flex flex-none items-center gap-1">

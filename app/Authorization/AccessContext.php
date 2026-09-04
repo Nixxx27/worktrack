@@ -124,6 +124,44 @@ final class AccessContext
             ->all();
     }
 
+    /**
+     * Exempt from ProjectPrivacyScope — system context ONLY.
+     *
+     * Note what is missing: the admin branch that seesAllTrackers() has. That
+     * asymmetry is the entire meaning of "Only me" (FR-4.11), and it is the one place
+     * in the system where D9 does not hold. An admin sees every tracker and every
+     * shared card on it; they do not see another person's private card, on any screen,
+     * in any tracker, including /activity.
+     *
+     * System context is exempt because the stall detector has to be able to flag a
+     * private card and mail its owner. That is not a viewing surface: the only fan-out
+     * from system context runs through OutboxWriter, which collapses a private card's
+     * recipients to the owner alone.
+     */
+    public function seesAllPrivateProjects(): bool
+    {
+        $this->assertEstablished();
+
+        return $this->mode === self::MODE_SYSTEM;
+    }
+
+    /**
+     * Whose private cards this actor may see — their own, and nobody else's.
+     *
+     * NULL means "no private cards at all", which is what a guest and a suspended
+     * account get. That is deliberately not the same as returning an id nobody has:
+     * the scope reads the null and omits the disjunct entirely, so a suspended user's
+     * query carries `visibility = 'tracker'` with no OR branch for anyone to widen.
+     */
+    public function privateOwnerUserId(): ?int
+    {
+        $this->assertEstablished();
+
+        return $this->user !== null && $this->user->isActive()
+            ? (int) $this->user->id
+            : null;
+    }
+
     public function isMemberOf(int $trackerId): bool
     {
         return $this->seesAllTrackers()
@@ -137,6 +175,13 @@ final class AccessContext
      * tracker set serves one user's cross-tracker roll-up to another with different
      * memberships — a silent NFR-S3 breach that produces no error and would never
      * surface in functional testing. Any cached metric MUST include this.
+     *
+     * PRIVACY IS NOT IN THIS KEY, and MetricsRepository is what makes that safe: every
+     * aggregate there excludes private cards outright, for their owner as well as for
+     * everyone else. If a metric ever starts counting the viewer's own private work,
+     * this key stops distinguishing two members of the same trackers and one of them
+     * gets served the other's figures — so that change and a per-user key have to
+     * arrive together.
      */
     public function cacheKey(): string
     {

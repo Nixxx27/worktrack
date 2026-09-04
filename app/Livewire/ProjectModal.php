@@ -2,6 +2,7 @@
 
 namespace App\Livewire;
 
+use App\Enums\ProjectVisibility;
 use App\Models\Project;
 use App\Models\Tracker;
 use App\Models\User;
@@ -55,6 +56,16 @@ class ProjectModal extends Component
     /** @var list<string> */
     public array $tags = [];
 
+    /**
+     * FR-4.11 — "Only me".
+     *
+     * A bool on the form rather than the enum's string, because the control is a
+     * checkbox and a checkbox that round-trips 'tracker'/'private' through the browser
+     * is one typo away from publishing a card somebody asked to hide. The mapping to
+     * the enum happens once, server-side, in attributes().
+     */
+    public bool $onlyMe = false;
+
     public string $tagInput = '';
 
     #[On('project-modal:create')]
@@ -62,7 +73,7 @@ class ProjectModal extends Component
     {
         Gate::authorize('project.create');
 
-        $this->reset(['projectId', 'name', 'description', 'priority', 'assignees', 'tags', 'tagInput']);
+        $this->reset(['projectId', 'name', 'description', 'priority', 'assignees', 'tags', 'tagInput', 'onlyMe']);
         $this->resetValidation();
 
         $this->trackerId = $tracker;
@@ -112,8 +123,35 @@ class ProjectModal extends Component
         $this->assignees = $model->assignees()->pluck('users.id')->map(fn ($id) => (int) $id)->all();
         $this->tags = $model->tags()->pluck('tags.name')->all();
         $this->tagInput = '';
+        $this->onlyMe = $model->isPrivate();
 
         $this->open = true;
+    }
+
+    /**
+     * Ticking "Only me" takes the card with it.
+     *
+     * The checkbox is live-bound so the two lists it invalidates disappear as it is
+     * ticked, rather than surviving on screen until a save rejects them. Ownership
+     * follows for the same reason: "Only me" and an owner who is not you is a
+     * contradiction, and correcting it silently here is kinder than a validation
+     * message about a select the form has just hidden.
+     *
+     * Untick puts nothing back. The assignees are gone by then, and restoring a list
+     * somebody removed — even accidentally — is a worse surprise than an empty one.
+     */
+    public function updatedOnlyMe(bool $value): void
+    {
+        if (! $value) {
+            return;
+        }
+
+        $this->ownerId = auth()->id();
+        $this->assignees = [];
+        $this->tags = [];
+        $this->tagInput = '';
+
+        $this->resetValidation();
     }
 
     public function close(): void
@@ -246,11 +284,18 @@ class ProjectModal extends Component
             'dueDate' => ['required', 'date', 'after_or_equal:startDate'],
 
             'priority' => ['required', Rule::in(['low', 'normal', 'high', 'urgent'])],
-            'ownerId' => ['required', 'integer', Rule::in($memberIds)],
+            // A private card's owner IS its audience (FR-4.11), so the picker is
+            // narrowed to yourself the moment "Only me" is ticked. Enforced here as
+            // well as in ProjectService because the select stays in the DOM: hiding a
+            // control is presentation, and this form is posted by the browser.
+            'ownerId' => $this->onlyMe
+                ? ['required', 'integer', Rule::in([auth()->id()])]
+                : ['required', 'integer', Rule::in($memberIds)],
             'assignees' => ['array', 'max:20'],
             'assignees.*' => ['integer', Rule::in($memberIds)],
             'tags' => ['array', 'max:12'],
             'tags.*' => ['string', 'max:40'],
+            'onlyMe' => ['boolean'],
         ];
     }
 
@@ -259,7 +304,9 @@ class ProjectModal extends Component
         return [
             'dueDate.after_or_equal' => 'The due date cannot be before the start date.',
             'ownerId.required' => 'Pick an owner — someone has to be accountable for this.',
-            'ownerId.in' => 'The owner must be a member of this tracker.',
+            'ownerId.in' => $this->onlyMe
+                ? 'An "Only me" project has to be owned by you — nobody else can open it.'
+                : 'The owner must be a member of this tracker.',
             'assignees.*.in' => 'You can only assign people who are members of this tracker.',
         ];
     }
@@ -310,8 +357,17 @@ class ProjectModal extends Component
             'target_date' => $data['dueDate'],
             'priority' => $data['priority'],
             'owner_user_id' => $data['ownerId'],
-            'assignees' => $data['assignees'] ?? [],
-            'tags' => $data['tags'] ?? [],
+
+            // Emptied rather than merely hidden. Both lists are shared with the tracker
+            // — an assignee is a person who must be able to open the card, a tag name
+            // lands in everyone's filter — so ticking "Only me" on a card that already
+            // had them has to CLEAR them, in the same save. ProjectService applies
+            // visibility last for exactly this reason, and refuses the combination
+            // outright if a caller sends it anyway.
+            'assignees' => $data['onlyMe'] ? [] : ($data['assignees'] ?? []),
+            'tags' => $data['onlyMe'] ? [] : ($data['tags'] ?? []),
+
+            'visibility' => $data['onlyMe'] ? ProjectVisibility::Private : ProjectVisibility::Tracker,
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Services\Projects;
 
+use App\Enums\ProjectVisibility;
 use App\Models\Project;
 use App\Models\Step;
 use App\Models\Tag;
@@ -51,7 +52,7 @@ class ProjectService
      * @param  array{
      *     name: string, description?: ?string, start_date?: ?string, target_date?: ?string,
      *     priority?: string, department_id?: ?int, owner_user_id?: ?int,
-     *     assignees?: list<int>, tags?: list<string>
+     *     assignees?: list<int>, tags?: list<string>, visibility?: string|ProjectVisibility
      * }  $attributes
      */
     public function create(Tracker $tracker, array $attributes, User $actor): Project
@@ -73,6 +74,10 @@ class ProjectService
 
             $this->assertMembers($tracker->id, array_filter([$ownerId]), 'owner');
 
+            $visibility = $this->resolveVisibility($attributes['visibility'] ?? null);
+
+            $this->assertPrivateIsSolitary($visibility, $ownerId, $actor, $attributes);
+
             $project = Project::create([
                 'tracker_id' => $tracker->id,
                 'step_id' => $step->id,
@@ -84,6 +89,7 @@ class ProjectService
                 'department_id' => $attributes['department_id'] ?? $tracker->default_department_id,
 
                 'owner_user_id' => $ownerId,
+                'visibility' => $visibility,
                 'priority' => $attributes['priority'] ?? 'normal',
                 'start_date' => $attributes['start_date'] ?? null,
                 'target_date' => $attributes['target_date'] ?? null,
@@ -173,6 +179,15 @@ class ProjectService
 
             if (array_key_exists('tags', $attributes)) {
                 $changed = $this->changeTags($project, $attributes['tags'] ?? [], $actor) || $changed;
+            }
+
+            // LAST, and the order is load-bearing. Going private requires a card with
+            // no assignees and no tags, and the same save that flips the switch is the
+            // one clearing them — the form hides both controls the moment "Only me" is
+            // ticked and posts empty lists. Checking visibility first would refuse the
+            // save on state the very next two lines were about to remove.
+            if (array_key_exists('visibility', $attributes)) {
+                $changed = $this->changeVisibility($project, $attributes['visibility'], $actor) || $changed;
             }
 
             return $changed;
@@ -375,6 +390,26 @@ class ProjectService
             return false;
         }
 
+        // ═══════════════════════════════════════════════════════════════════════════
+        // FR-4.11 — the invariant MySQL would not take (see the migration, errno 3823).
+        //
+        // ProjectPrivacyScope matches a private card on owner_user_id, so both halves
+        // of this are unrecoverable rather than merely wrong. Clearing the owner hides
+        // the card from EVERY user including its owner: no board, no search, no drawer,
+        // no error — the card is simply gone, and nothing in the UI can reach it to put
+        // an owner back. Handing it to someone else is the same event with a witness.
+        //
+        // Publishing it is the way out, and the message says so, because a refusal that
+        // does not name the escape route is a dead end.
+        // ═══════════════════════════════════════════════════════════════════════════
+        if ($project->isPrivate()) {
+            throw new \InvalidArgumentException(
+                'A private project cannot change owner — "Only me" means the owner, so moving '
+                .'it would hide the card from you without showing it to anyone else. Set it to '
+                .'"Everyone on this tracker" first (FR-4.11).'
+            );
+        }
+
         $this->assertMembers($project->tracker_id, array_filter([$ownerId]), 'owner');
 
         // Captured before the save: after forceFill()->save() the model's original
@@ -459,6 +494,14 @@ class ProjectService
     {
         $userIds = array_values(array_unique(array_map('intval', array_filter($userIds))));
 
+        if ($userIds !== [] && $project->isPrivate()) {
+            throw new \InvalidArgumentException(
+                'A private project cannot have assignees — nobody but the owner can see it, '
+                .'so assigning it to someone would be handing them work they cannot open (FR-4.11). '
+                .'Set it back to "Everyone on this tracker" first.'
+            );
+        }
+
         $this->assertMembers($project->tracker_id, $userIds, 'assignee');
 
         $payload = array_fill_keys($userIds, [
@@ -480,6 +523,20 @@ class ProjectService
      */
     private function applyTags(Project $project, array $names, User $actor, bool $sync = false)
     {
+        if ($names !== [] && $project->isPrivate()) {
+            // Tags are a TRACKER-WIDE vocabulary: TagService::resolve() firstOrCreates
+            // into `tags` keyed by (tracker_id, name), so the label lands in everyone's
+            // tag picker and in the board filter the moment it is used — and it stays
+            // there after the card is archived, because nothing garbage-collects a tag.
+            // Labelling a private card "resignation" would publish the one word its
+            // owner was hiding, which is the whole point of the setting defeated by a
+            // side effect two files away.
+            throw new \InvalidArgumentException(
+                'A private project cannot carry tags — tag names are shared with the whole '
+                .'tracker, so the label would be visible even though the card is not (FR-4.11).'
+            );
+        }
+
         $tags = $this->tags->resolve($project->tracker, $names, $actor);
 
         $payload = $tags->mapWithKeys(fn (Tag $tag) => [$tag->id => [
@@ -493,6 +550,123 @@ class ProjectService
         $project->unsetRelation('tags');
 
         return $project->tags()->get();
+    }
+
+    /**
+     * The requested visibility, or the default.
+     *
+     * Accepts the enum or its string so the Livewire form, the seeder and a future
+     * import all reach the same validation. Anything else is refused rather than
+     * coerced: silently falling back to 'tracker' on a typo would publish a card
+     * somebody asked to hide, which is the one failure mode this feature cannot have.
+     */
+    private function resolveVisibility(string|ProjectVisibility|null $raw): ProjectVisibility
+    {
+        if ($raw === null) {
+            return ProjectVisibility::Tracker;
+        }
+
+        if ($raw instanceof ProjectVisibility) {
+            return $raw;
+        }
+
+        return ProjectVisibility::tryFrom($raw)
+            ?? throw new \InvalidArgumentException("Unknown project visibility [{$raw}].");
+    }
+
+    /**
+     * A private card has an audience of exactly one, and that one is its creator.
+     *
+     * Owner rather than a separate "private to" column, and the owner must be the
+     * person creating it — creating a hidden card owned by somebody else would make it
+     * invisible to you the instant it was saved, which is not a feature anyone asked
+     * for and is indistinguishable from the save having failed.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    private function assertPrivateIsSolitary(
+        ProjectVisibility $visibility,
+        ?int $ownerId,
+        User $actor,
+        array $attributes,
+    ): void {
+        if (! $visibility->isPrivate()) {
+            return;
+        }
+
+        if ($ownerId !== $actor->id) {
+            throw new \InvalidArgumentException(
+                'A private project must be owned by the person creating it — "Only me" means '
+                .'the owner, and a private card owned by someone else would be invisible to '
+                .'both of you (FR-4.11).'
+            );
+        }
+
+        // Belt and braces: applyAssignees() and applyTags() refuse these too, and would
+        // catch a caller that skipped this. Refusing here as well means the message
+        // names the CREATE that was wrong rather than the attach that followed it.
+        if (($attributes['assignees'] ?? []) !== [] || ($attributes['tags'] ?? []) !== []) {
+            throw new \InvalidArgumentException(
+                'A private project cannot be created with assignees or tags (FR-4.11).'
+            );
+        }
+    }
+
+    /**
+     * Flip a card between shared and private.
+     *
+     * Both directions are allowed and neither is retroactive in the way people expect,
+     * so it is worth being precise about what each one does.
+     *
+     * Going PRIVATE hides the card and its entire trail — every activity row, comment,
+     * task, attachment and movement, back to creation — from everyone but the owner.
+     * Colleagues who were reading it yesterday see it vanish, with no tombstone. That
+     * is the honest behaviour for "only me": a card that left a "hidden by Nikko" hole
+     * in the feed would be telling people exactly what it was asked not to.
+     *
+     * Going SHARED reveals the whole history at once, including what happened while it
+     * was hidden. Nothing was suppressed at write time, so there is no gap — which is
+     * also why publishing is not a way to launder work: the log shows it all.
+     *
+     * Watchers are dropped on the way in. A watcher of a card they can no longer read
+     * is a row that can only ever produce a notification about something invisible.
+     */
+    private function changeVisibility(Project $project, string|ProjectVisibility|null $raw, User $actor): bool
+    {
+        $to = $this->resolveVisibility($raw);
+        $from = $project->visibility;
+
+        if ($from === $to) {
+            return false;
+        }
+
+        if ($to->isPrivate()) {
+            if ($project->owner_user_id !== $actor->id) {
+                throw new \InvalidArgumentException(
+                    'Only the owner can make a project private, and it stays theirs alone — '
+                    .'take ownership first if this is your work (FR-4.11).'
+                );
+            }
+
+            if ($project->assignees()->exists() || $project->tags()->exists()) {
+                throw new \InvalidArgumentException(
+                    'Remove the assignees and tags before making this project private — they '
+                    .'would be visible to the tracker even though the card is not (FR-4.11).'
+                );
+            }
+
+            $project->watchers()->detach();
+            $project->unsetRelation('watchers');
+        }
+
+        $project->forceFill(['visibility' => $to])->save();
+
+        $this->activity->record($project, 'visibility_changed', $actor, [
+            'from' => $from->value,
+            'to' => $to->value,
+        ]);
+
+        return true;
     }
 
     /**
@@ -533,7 +707,14 @@ class ProjectService
 
     private function nextPosition(int $trackerId, int $stepId): float
     {
-        $max = Project::where('tracker_id', $trackerId)
+        // Raw, and privacy-blind on purpose (FR-4.11). Read through the visibility
+        // scope this returns the highest position the CREATOR can see, so a new card
+        // lands on top of another member's private card instead of after it — two rows
+        // with the same board_position, and an order that flips between requests for
+        // the one person who can see both. A MAX() over one column of one column-of-one
+        // -tracker discloses nothing about the card holding it.
+        $max = DB::table('projects')
+            ->where('tracker_id', $trackerId)
             ->where('step_id', $stepId)
             ->max('board_position');
 

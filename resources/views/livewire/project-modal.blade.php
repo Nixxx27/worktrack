@@ -102,8 +102,12 @@
                                 </label>
                                 {{-- FR-4.3 — members of this tracker only. You cannot make
                                      someone accountable for work they cannot see. --}}
-                                <select id="pm-owner" wire:model="ownerId"
-                                        class="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink transition focus:border-royal-600 focus:ring-2 focus:ring-royal-600/20 focus:outline-none">
+                                {{-- Locked to you while "Only me" is on. Disabled rather than
+                                     swapped for static text so the field keeps its place in the
+                                     grid and its label stays associated; the value still posts,
+                                     because Livewire sends the bound property, not the DOM. --}}
+                                <select id="pm-owner" wire:model="ownerId" @disabled($onlyMe)
+                                        class="mt-1 w-full rounded-lg border border-line-strong bg-surface px-3 py-2 text-sm text-ink transition focus:border-royal-600 focus:ring-2 focus:ring-royal-600/20 focus:outline-none disabled:cursor-not-allowed disabled:bg-canvas disabled:text-ink-soft">
                                     <option value="">Select an owner…</option>
                                     @foreach ($this->members as $member)
                                         <option value="{{ $member->id }}">{{ $member->name }}</option>
@@ -125,7 +129,34 @@
                             </div>
                         </div>
 
-                        <div>
+                        {{-- FR-4.11 — the visibility switch.
+                             Placed under Owner rather than beside the title because it is a
+                             statement about audience, and the owner is the audience: with this
+                             ticked the two are the same person by rule. --}}
+                        <div class="rounded-xl border border-line-strong bg-canvas px-3.5 py-3">
+                            <label class="flex cursor-pointer items-start gap-2.5">
+                                <input type="checkbox" wire:model.live="onlyMe"
+                                       class="mt-0.5 size-4 rounded border-line-strong text-royal-700 focus:ring-royal-600">
+                                <span>
+                                    <span class="block text-xs font-semibold text-ink">Only me</span>
+                                    <span class="mt-0.5 block text-[11px] text-ink-faint">
+                                        @if ($onlyMe)
+                                            Hidden from everyone else on this tracker — the card, its
+                                            comments and its activity log. Nobody is notified about it.
+                                        @else
+                                            Keep this card, and everything on it, visible to you alone.
+                                        @endif
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+
+                        {{-- Both of the controls below are SHARED surfaces: an assignee has to be
+                             able to open the card, and a tag name lands in every member's filter.
+                             Neither can coexist with "Only me", so they are removed rather than
+                             disabled — a greyed-out control invites a question the answer to
+                             which is "that would defeat the setting you just chose". --}}
+                        <div @class(['hidden' => $onlyMe])>
                             <span class="block text-xs font-semibold text-ink">Assigned to</span>
                             <p class="mt-0.5 text-[11px] text-ink-faint">
                                 Anyone on this tracker. The owner is accountable; assignees are doing it.
@@ -153,7 +184,7 @@
                             @error('assignees.*') <p class="mt-1 text-xs text-health-stalled">{{ $message }}</p> @enderror
                         </div>
 
-                        <div>
+                        <div @class(['hidden' => $onlyMe])>
                             <label for="pm-tags" class="block text-xs font-semibold text-ink">Tags</label>
 
                             @if ($tags)
@@ -192,8 +223,12 @@
 
                     {{-- ── footer ──────────────────────────────────────────── --}}
                     <div class="flex items-center justify-between gap-3 rounded-b-2xl border-t border-line bg-canvas px-5 py-3">
+                        {{-- The promise has to change with the setting. "Recorded in the
+                             activity log" is still true of a private card — the rows are
+                             written exactly as before — but it reads as "your colleagues will
+                             see this", and on an Only me card they will not. --}}
                         <p class="font-mono text-[10px] uppercase tracking-[0.08em] text-ink-faint">
-                            Recorded in the activity log
+                            {{ $onlyMe ? 'Logged for you only' : 'Recorded in the activity log' }}
                         </p>
 
                         <div class="flex items-center gap-2">

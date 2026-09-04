@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Authorization\Scopes\ProjectPrivacyScope;
 use App\Authorization\Scopes\TrackerVisibilityScope;
 use App\Models\Concerns\BelongsToTracker;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * should ever create(), update(), or delete(): the table is append-only by intent,
  * and a row in it is a claim about what happened.
  */
-#[ScopedBy(TrackerVisibilityScope::class)]
+#[ScopedBy([TrackerVisibilityScope::class, ProjectPrivacyScope::class])]
 class ProjectActivity extends Model
 {
     use BelongsToTracker;

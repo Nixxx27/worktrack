@@ -22,6 +22,18 @@ use Illuminate\Support\Collection;
  * FR-8.7 — nothing here reads a manually entered status. Every figure derives from
  * project_step_movements or from read-model columns that are materialisations of it.
  */
+/*
+ * PRIVATE CARDS ARE EXCLUDED FROM EVERY AGGREGATE HERE — ->excludingPrivate() on each
+ * of the five reads below, including for the owner who can see them everywhere else.
+ *
+ * Two reasons, and the second is a leak rather than a matter of taste. A private card
+ * is not team throughput: a cycle time that quietly includes one person's private
+ * notes is a number two people reading the same dashboard disagree about with nothing
+ * on screen to explain the gap. And these results are cached under
+ * AccessContext::cacheKey(), which distinguishes viewers by TRACKER SET alone — so two
+ * members of the same trackers share an entry, and the first to warm it would serve
+ * their own private work's figures to the second.
+ */
 class MetricsRepository
 {
     public function __construct(private AccessContext $context) {}
@@ -96,6 +108,7 @@ class MetricsRepository
     public function cycleTime(?int $trackerId = null): array
     {
         $completed = Project::query()
+            ->excludingPrivate()
             ->when($trackerId, fn ($q) => $q->where('tracker_id', $trackerId))
             ->whereNull('archived_at')
             ->whereNotNull('first_terminal_at')
@@ -180,6 +193,7 @@ class MetricsRepository
 
         $bucket = function (string $column) use ($trackerId, $start, $tz) {
             return Project::query()
+                ->excludingPrivate()
                 ->when($trackerId, fn ($q) => $q->where('tracker_id', $trackerId))
                 // Both series exclude archived work, and they must agree: if one half
                 // counted withdrawn projects and the other did not, the gap between
@@ -360,6 +374,7 @@ class MetricsRepository
         $tz = config('worktrack.default_timezone');
 
         $completed = Project::query()
+            ->excludingPrivate()
             ->when($trackerId, fn ($q) => $q->where('tracker_id', $trackerId))
             ->whereNull('archived_at')
             ->whereNotNull('first_terminal_at')
@@ -435,6 +450,7 @@ class MetricsRepository
             ->get(['tracker_id', 'current_step_entered_at', 'health', 'target_date']);
 
         $completions = Project::query()
+            ->excludingPrivate()
             ->whereNull('archived_at')
             ->whereNotNull('first_terminal_at')
             ->where('first_terminal_at', '>=', now($tz)->subDays($windowDays)->utc())
@@ -474,6 +490,7 @@ class MetricsRepository
     private function liveProjects(?int $trackerId)
     {
         return Project::query()
+            ->excludingPrivate()
             ->when($trackerId, fn ($q) => $q->where('tracker_id', $trackerId))
             ->whereNull('archived_at')
             ->where('current_step_type', '!=', StepType::Terminal);
