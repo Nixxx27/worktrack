@@ -479,11 +479,33 @@
 
                              Clamped to three lines and expanded in the browser: a long brief
                              must not push the checklist off screen, and a round trip to read
-                             two more sentences is a round trip nobody waits for. --}}
+                             two more sentences is a round trip nobody waits for.
+
+                             Measured continuously rather than once at init. Editing the
+                             description with the drawer open morphs new text into this
+                             paragraph without re-running x-init, so a one-shot measurement
+                             leaves a long brief clamped with no control to open it — the
+                             text is simply unreachable. A ResizeObserver also covers the
+                             webfont landing after first paint and the drawer changing
+                             width. --}}
                         @if ($project->description)
                             <div class="flex-none border-b border-line bg-canvas px-5 py-2.5"
-                                 x-data="{ expanded: false, clipped: false }"
-                                 x-init="$nextTick(() => clipped = $refs.body.scrollHeight > $refs.body.clientHeight + 1)">
+                                 x-data="{
+                                     expanded: false,
+                                     clipped: false,
+                                     measure() {
+                                         // Expanded, the paragraph is its own full height and
+                                         // would measure as unclipped, retracting 'Show less'
+                                         // from under the cursor.
+                                         if (this.expanded) return;
+                                         this.clipped = this.$refs.body.scrollHeight > this.$refs.body.clientHeight + 1;
+                                     },
+                                 }"
+                                 x-init="
+                                     $nextTick(() => measure());
+                                     new ResizeObserver(() => measure()).observe($refs.body);
+                                     document.fonts?.ready.then(() => measure());
+                                 ">
                                 <p x-ref="body"
                                    class="linked-text whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-ink-soft"
                                    x-bind:class="expanded ? '' : 'line-clamp-3'">{{ \App\Support\Linkify::text($project->description) }}</p>
