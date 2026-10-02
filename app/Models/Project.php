@@ -7,8 +7,10 @@ use App\Authorization\Scopes\TrackerVisibilityScope;
 use App\Enums\HealthSource;
 use App\Enums\ProjectHealth;
 use App\Enums\ProjectVisibility;
+use App\Enums\ScheduleStatus;
 use App\Enums\StepType;
 use App\Models\Concerns\BelongsToTracker;
+use Carbon\Carbon;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\ScopedBy;
 use Illuminate\Database\Eloquent\Builder;
@@ -188,6 +190,56 @@ class Project extends Model
             && $this->current_step_type !== StepType::Terminal
             && $this->target_date->toDateString()
                 < now(config('worktrack.default_timezone'))->toDateString();
+    }
+
+    /**
+     * Where this card stands against its due date — the schedule summary's verdict.
+     *
+     * Overdue is isOverdue(), not a second derivation of it, so the summary can never
+     * call a card late that the board does not (or the reverse).
+     *
+     * "Due soon" counts WORKING days, not calendar days: a card due Monday, read on a
+     * Friday, has one day of work left rather than three, and that is the figure that
+     * decides whether to chase it now. Due today counts as soon, not late.
+     *
+     * Null for a finished card: a schedule verdict on delivered work is a report
+     * figure (MetricsRepository::onTimeDelivery), not a status.
+     */
+    public function scheduleStatus(int $soonWorkingDays = 3): ?ScheduleStatus
+    {
+        if ($this->current_step_type === StepType::Terminal) {
+            return null;
+        }
+
+        if ($this->target_date === null) {
+            return ScheduleStatus::Undated;
+        }
+
+        if ($this->isOverdue()) {
+            return ScheduleStatus::Overdue;
+        }
+
+        // Same date-to-date-in-org-timezone rule as isOverdue(); see the note there.
+        $today = Carbon::parse(now(config('worktrack.default_timezone'))->toDateString());
+        $due = Carbon::parse($this->target_date->toDateString());
+
+        // Any span of seven calendar days holds five weekdays, so anything further out
+        // is past a window of up to four working days without walking the calendar.
+        if ($today->diffInDays($due) > 7 && $soonWorkingDays <= 4) {
+            return ScheduleStatus::OnSchedule;
+        }
+
+        $workingDaysLeft = 0;
+
+        for ($day = $today->copy()->addDay(); $day->lte($due); $day->addDay()) {
+            if (! $day->isWeekend()) {
+                $workingDaysLeft++;
+            }
+        }
+
+        return $workingDaysLeft <= $soonWorkingDays
+            ? ScheduleStatus::DueSoon
+            : ScheduleStatus::OnSchedule;
     }
 
     /**

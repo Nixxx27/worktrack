@@ -4,9 +4,11 @@ namespace App\Services\Metrics;
 
 use App\Authorization\AccessContext;
 use App\Enums\ProjectHealth;
+use App\Enums\ScheduleStatus;
 use App\Enums\StepType;
 use App\Models\Project;
 use App\Models\ProjectStepMovement;
+use App\Models\Step;
 use App\Models\Tracker;
 use Illuminate\Support\Collection;
 
@@ -295,6 +297,69 @@ class MetricsRepository
             'by_member' => $this->tallyByMember($overdue, $dueSoon),
             'without_target' => $this->liveProjects($trackerId)->whereNull('target_date')->count(),
             'soon_days' => $soonDays,
+        ];
+    }
+
+    /**
+     * The schedule summary: every live card in a step flagged show_in_summary, with
+     * its start, its due date and where it stands against it.
+     *
+     * Unlike deadlines() this has no horizon — a card due in five weeks and one with
+     * no due date at all both belong here, because the question is "is everything in
+     * progress on schedule", not "what is about to bite". Which steps count is the
+     * tracker admin's call (Step::show_in_summary), not a rule over step type.
+     *
+     * Grouped by tracker then step in board order, worst first inside each group, so
+     * the panel reads the way the board does. Private cards stay out, as everywhere
+     * on the dashboard — see the class note.
+     *
+     * @return array{groups: Collection, counts: array<string, int>, total: int, steps_watched: int}
+     */
+    public function scheduleSummary(?int $trackerId = null): array
+    {
+        $projects = $this->liveProjects($trackerId)
+            ->whereHas('step', fn ($q) => $q->whereNull('archived_at')->where('show_in_summary', true))
+            ->with(['tracker:id,name,public_id', 'step:id,name,position', 'owner:id,name', 'assignees:id,name'])
+            ->get();
+
+        $rows = $projects
+            ->map(fn (Project $p) => ['project' => $p, 'status' => $p->scheduleStatus()])
+            ->sortBy([
+                fn ($a, $b) => $a['status']->rank() <=> $b['status']->rank(),
+                // Most overdue / soonest due first; undated rows have no date to order by.
+                fn ($a, $b) => ($a['project']->target_date?->toDateString() ?? '')
+                    <=> ($b['project']->target_date?->toDateString() ?? ''),
+                fn ($a, $b) => $a['project']->name <=> $b['project']->name,
+            ]);
+
+        $groups = $rows
+            ->groupBy(fn ($r) => $r['project']->step_id)
+            ->map(fn ($group) => [
+                'tracker' => $group->first()['project']->tracker,
+                'step' => $group->first()['project']->step,
+                'rows' => $group->values(),
+            ])
+            ->sortBy([
+                fn ($a, $b) => $a['tracker']->name <=> $b['tracker']->name,
+                fn ($a, $b) => $a['step']->position <=> $b['step']->position,
+            ])
+            ->values();
+
+        $counts = collect(ScheduleStatus::cases())
+            ->mapWithKeys(fn ($s) => [$s->value => $rows->where('status', $s)->count()])
+            ->all();
+
+        return [
+            'groups' => $groups,
+            'counts' => $counts,
+            'total' => $rows->count(),
+            // Lets the panel tell "nothing in progress" apart from "no step is set to
+            // show here", which need different next steps from the reader.
+            'steps_watched' => Step::query()
+                ->when($trackerId, fn ($q) => $q->where('tracker_id', $trackerId))
+                ->whereNull('archived_at')
+                ->where('show_in_summary', true)
+                ->count(),
         ];
     }
 

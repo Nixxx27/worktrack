@@ -193,6 +193,101 @@
                 </p>
             @endif
 
+            {{-- ── schedule strip ─────────────────────────────────────────────
+                 "Is the work in progress on schedule", answered without leaving the
+                 board: one line of counts across every step marked "summary" in
+                 Settings, which opens into the start / due list on demand. Closed by
+                 default so the columns keep their height; the choice is remembered
+                 per browser, and a blocked localStorage just means it starts closed. --}}
+            @php $schedule = $this->schedule; @endphp
+            @if ($schedule['steps']->isNotEmpty())
+                @php
+                    $chips = [
+                        'overdue' => ['late', 'bg-health-stalled-bg text-health-stalled'],
+                        'due_soon' => ['due soon', 'bg-health-atrisk-bg text-health-atrisk'],
+                        'on_schedule' => ['on schedule', 'bg-health-ontrack-bg text-health-ontrack'],
+                        'undated' => ['no due date', 'bg-canvas text-ink-soft ring-1 ring-line'],
+                    ];
+                @endphp
+                <div class="mt-3 flex-none rounded-xl bg-surface ring-1 ring-line"
+                     x-data="{
+                         open: (() => { try { return localStorage.getItem('worktrack.scheduleOpen') === '1' } catch (e) { return false } })(),
+                         toggle() {
+                             this.open = ! this.open;
+                             try { localStorage.setItem('worktrack.scheduleOpen', this.open ? '1' : '0') } catch (e) {}
+                         },
+                     }">
+                    <button type="button" x-on:click="toggle()" :aria-expanded="open ? 'true' : 'false'"
+                            aria-controls="board-schedule-list"
+                            class="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl px-3 py-2 text-left transition hover:bg-canvas focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-royal-600">
+                        <span class="font-mono text-[10px] font-semibold uppercase tracking-[0.08em] text-ink">Schedule</span>
+                        <span class="truncate text-[11px] text-ink-faint">{{ $schedule['steps']->pluck('name')->join(' · ') }}</span>
+
+                        <span class="flex flex-wrap items-center gap-1.5">
+                            @if ($schedule['rows']->isEmpty())
+                                <span class="text-[11px] text-ink-faint">nothing here right now</span>
+                            @else
+                                @foreach ($chips as $key => [$word, $tone])
+                                    @if ($schedule['counts'][$key] > 0)
+                                        <span class="tnum rounded-full px-2 py-0.5 font-mono text-[10px] font-medium {{ $tone }}">
+                                            {{ $schedule['counts'][$key] }} {{ $word }}
+                                        </span>
+                                    @endif
+                                @endforeach
+                            @endif
+                        </span>
+
+                        <span class="ml-auto flex items-center gap-1 text-[11px] font-medium text-royal-800">
+                            <span x-text="open ? 'Hide dates' : 'Show dates'">Show dates</span>
+                            <svg class="size-3 transition-transform" :class="open && 'rotate-180'" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                                <path d="M3 4.5 6 7.5 9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </span>
+                    </button>
+
+                    @if ($schedule['rows']->isNotEmpty())
+                        <div id="board-schedule-list" x-show="open" x-cloak
+                             class="max-h-56 overflow-y-auto border-t border-line-soft px-3 pb-1">
+                            <table class="w-full text-sm">
+                                <thead class="sticky top-0 bg-surface">
+                                    <tr class="text-left font-mono text-[10px] uppercase tracking-[0.08em] text-ink-faint">
+                                        <th class="py-1.5 pr-3 font-normal">Project</th>
+                                        @if ($schedule['steps']->count() > 1)
+                                            <th class="py-1.5 pr-3 font-normal">Step</th>
+                                        @endif
+                                        <th class="py-1.5 pr-3 font-normal">Start</th>
+                                        <th class="py-1.5 pr-3 font-normal">Due</th>
+                                        <th class="py-1.5 text-right font-normal">Schedule</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach ($schedule['rows'] as ['project' => $p, 'step' => $s, 'status' => $status])
+                                        <tr wire:key="sched-{{ $p->public_id }}" class="border-t border-line-soft">
+                                            <td class="py-1.5 pr-3">
+                                                <button type="button" wire:click="openProject('{{ $p->public_id }}')"
+                                                        class="rounded text-left text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-royal-600">
+                                                    @if ($p->isPrivate())
+                                                        <span class="sr-only">Private:</span>
+                                                        <svg class="mr-0.5 inline size-3 -translate-y-px text-ink-faint" viewBox="0 0 12 12" fill="none" aria-hidden="true"><rect x="2.5" y="5.5" width="7" height="5" rx="1" stroke="currentColor"/><path d="M4 5.5V4a2 2 0 1 1 4 0v1.5" stroke="currentColor"/></svg>
+                                                    @endif
+                                                    {{ $p->name }}
+                                                </button>
+                                            </td>
+                                            @if ($schedule['steps']->count() > 1)
+                                                <td class="py-1.5 pr-3 text-[11px] text-ink-faint">{{ $s->name }}</td>
+                                            @endif
+                                            <td class="tnum py-1.5 pr-3 font-mono text-[11px] text-ink-soft">{{ Duration::shortDayDate($p->start_date, 'No start') }}</td>
+                                            <td class="tnum py-1.5 pr-3 font-mono text-[11px] text-ink-soft">{{ Duration::shortDayDate($p->target_date, 'No due date') }}</td>
+                                            <td class="py-1.5 text-right"><x-schedule-pill :project="$p" :status="$status" /></td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </div>
+            @endif
+
             {{-- ── columns ─────────────────────────────────────────────────── --}}
             <div class="mt-4 flex min-h-0 flex-1 items-stretch gap-3 overflow-x-auto pb-2"
                  x-data
@@ -240,6 +335,31 @@
                                 {{ $cards->count() }}@if ($step->wip_limit)/{{ $step->wip_limit }}@endif
                             </span>
                         </div>
+
+                        {{-- This column's share of the schedule strip, under its own name,
+                             so a watched column says how much of it is late before you
+                             read a single card. On-schedule is left out: the count beside
+                             the name already implies it, and four pills would wrap. --}}
+                        @if ($step->show_in_summary && isset($schedule['byStep'][$step->id]))
+                            @php $mine = $schedule['byStep'][$step->id]; @endphp
+                            @if ($mine['overdue'] + $mine['due_soon'] + $mine['undated'] > 0)
+                                <div class="mb-1.5 flex flex-none flex-wrap gap-1 px-1">
+                                    @foreach (['overdue', 'due_soon', 'undated'] as $key)
+                                        @if ($mine[$key] > 0)
+                                            <span class="tnum rounded-full px-1.5 py-px font-mono text-[10px] font-medium {{ $chips[$key][1] }}">
+                                                {{ $mine[$key] }} {{ $chips[$key][0] }}
+                                            </span>
+                                        @endif
+                                    @endforeach
+                                </div>
+                            @else
+                                <div class="mb-1.5 flex-none px-1">
+                                    <span class="rounded-full px-1.5 py-px font-mono text-[10px] font-medium {{ $chips['on_schedule'][1] }}">
+                                        all on schedule
+                                    </span>
+                                </div>
+                            @endif
+                        @endif
 
                         {{-- wire:ignore.self, NOT wire:ignore.
 

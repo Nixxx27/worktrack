@@ -26,6 +26,7 @@ class Step extends Model
             'type' => StepType::class,
             'archived_at' => 'datetime',
             'requires_due_date' => 'boolean',
+            'show_in_summary' => 'boolean',
         ];
     }
 

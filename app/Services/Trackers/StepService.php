@@ -53,16 +53,23 @@ class StepService
                 ->lockForUpdate()
                 ->get();
 
+            $type = $attributes['type'] instanceof StepType
+                ? $attributes['type']
+                : StepType::from($attributes['type']);
+
             $step = Step::create([
                 'tracker_id' => $tracker->id,
                 'name' => $attributes['name'],
-                'type' => $attributes['type'] instanceof StepType
-                    ? $attributes['type']
-                    : StepType::from($attributes['type']),
+                'type' => $type,
                 'wip_limit' => $attributes['wip_limit'] ?? null,
                 // FR-4.1 gate. Off unless asked for: a new column should not start
                 // blocking drops because of a default nobody chose.
                 'requires_due_date' => (bool) ($attributes['requires_due_date'] ?? false),
+                // Schedule summary: a working column is watched unless told otherwise,
+                // matching the migration's backfill, so a new "QA" step does not drop
+                // its cards off the dashboard because nobody ticked a box.
+                'show_in_summary' => (bool) ($attributes['show_in_summary']
+                    ?? $type === StepType::Active),
                 'description' => $attributes['description'] ?? null,
                 // Provisional: the renumbering below is what actually decides it.
                 'position' => $live->count(),
@@ -83,6 +90,7 @@ class StepService
                 'type' => $step->type->value,
                 'position' => $step->position,
                 'requires_due_date' => $step->requires_due_date,
+                'show_in_summary' => $step->show_in_summary,
             ], null, $tracker->id);
 
             return $step;
@@ -372,6 +380,39 @@ class StepService
             'name' => $step->name,
             'gate' => 'requires_due_date',
             'to' => $requires,
+        ], null, $step->tracker_id);
+
+        return true;
+    }
+
+    /**
+     * List (or stop listing) this step's cards in the dashboard schedule summary.
+     *
+     * Display-only: nothing about how cards move, gate or measure depends on it, so
+     * unlike retype() there is no read model to keep in step. Same guards and audit
+     * trail as setRequiresDueDate(), and the same false-when-unchanged contract.
+     */
+    public function setShowInSummary(Step $step, bool $show, User $actor): bool
+    {
+        if ($step->archived_at !== null) {
+            throw new \InvalidArgumentException('Cannot configure an archived step.');
+        }
+
+        if ($step->tracker->archived_at !== null) {
+            throw new \InvalidArgumentException('Cannot configure a step in an archived tracker.');
+        }
+
+        if ($step->show_in_summary === $show) {
+            return false;
+        }
+
+        $step->forceFill(['show_in_summary' => $show])->save();
+
+        $this->audit->log('tracker.step_summary_changed', $actor->id, [
+            'tracker_id' => $step->tracker_id,
+            'step_id' => $step->id,
+            'name' => $step->name,
+            'to' => $show,
         ], null, $step->tracker_id);
 
         return true;

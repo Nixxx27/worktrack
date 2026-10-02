@@ -82,7 +82,7 @@ class DemoDataSeeder extends Seeder
             foreach ([['Spec', 'active', 1], ['Build', 'active', 2], ['UAT', 'active', 3], ['Released', 'terminal', 4]] as [$name, $type, $pos]) {
                 Step::firstOrCreate(
                     ['tracker_id' => $sd->id, 'name' => $name],
-                    ['type' => $type, 'position' => $pos],
+                    ['type' => $type, 'position' => $pos, 'show_in_summary' => $type === 'active'],
                 );
             }
             Step::where('tracker_id', $sd->id)->whereIn('name', ['New', 'In Progress', 'Done'])

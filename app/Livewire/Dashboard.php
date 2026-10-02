@@ -40,6 +40,7 @@ class Dashboard extends Component
             'flow' => $repo->flowByMonth(6, $t),
             'inFlight' => $repo->inFlightAges($t),
             'onTime' => $repo->onTimeDelivery($t),
+            'schedule' => $repo->scheduleSummary($t),
             'stalled' => $repo->stalled($t),
             'workload' => $repo->workload($t),
             'seesEverything' => $repo->seesEverything(),

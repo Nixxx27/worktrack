@@ -188,6 +188,28 @@ class StepController
             : "\"{$step->name}\" no longer requires a due date.");
     }
 
+    /** Toggle whether a step's cards appear in the dashboard schedule summary. */
+    public function summary(Request $request, Tracker $tracker, Step $step, StepService $steps): RedirectResponse
+    {
+        Gate::authorize('configureSteps', $tracker);
+
+        abort_unless($step->tracker_id === $tracker->id, 404);
+
+        $data = $request->validate([
+            'show_in_summary' => ['required', 'boolean'],
+        ]);
+
+        $changed = $steps->setShowInSummary($step, (bool) $data['show_in_summary'], $request->user());
+
+        if (! $changed) {
+            return back();
+        }
+
+        return back()->with('status', $data['show_in_summary']
+            ? "Cards in \"{$step->name}\" now appear in the dashboard schedule summary."
+            : "Cards in \"{$step->name}\" no longer appear in the dashboard schedule summary.");
+    }
+
     /** FR-3.1 — move one step one place along the workflow. */
     public function move(Request $request, Tracker $tracker, Step $step, StepService $steps): RedirectResponse
     {

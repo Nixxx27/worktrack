@@ -45,6 +45,9 @@ class TrackerService
                     'name' => $name,
                     'type' => $type,
                     'position' => $position,
+                    // Same default the migration backfilled: the working column is
+                    // what the schedule summary watches until an admin says otherwise.
+                    'show_in_summary' => $type === StepType::Active,
                 ]);
             }
 

@@ -121,5 +121,6 @@ Route::middleware(['auth', 'can:tracker.steps.configure'])
         Route::post('/trackers/{tracker}/steps/{step}/move', [StepController::class, 'move'])->name('trackers.steps.move');
         Route::post('/trackers/{tracker}/steps/{step}/rename', [StepController::class, 'rename'])->name('trackers.steps.rename');
         Route::post('/trackers/{tracker}/steps/{step}/gate', [StepController::class, 'gate'])->name('trackers.steps.gate');
+        Route::post('/trackers/{tracker}/steps/{step}/summary', [StepController::class, 'summary'])->name('trackers.steps.summary');
         Route::post('/trackers/{tracker}/steps/{step}/retype', [StepController::class, 'retype'])->name('trackers.steps.retype');
     });

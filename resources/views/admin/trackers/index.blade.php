@@ -208,6 +208,26 @@
                                             </button>
                                         </form>
 
+                                        {{-- Same filled-when-on toggle, for the dashboard schedule
+                                             summary. Active steps start on; this is how a team opts
+                                             a "To Do" in or a parked column out. --}}
+                                        <form method="POST" action="{{ route('admin.trackers.steps.summary', [$tracker, $step]) }}">
+                                            @csrf
+                                            <input type="hidden" name="show_in_summary" value="{{ $step->show_in_summary ? 0 : 1 }}">
+                                            <button
+                                                title="{{ $step->show_in_summary
+                                                    ? 'Cards in '.$step->name.' appear in the dashboard schedule summary. Click to leave them out.'
+                                                    : 'List cards in '.$step->name.' in the dashboard schedule summary.' }}"
+                                                aria-pressed="{{ $step->show_in_summary ? 'true' : 'false' }}"
+                                                @class([
+                                                    'grid h-4 place-items-center rounded px-1 font-mono text-[10px] transition',
+                                                    'bg-royal-900 text-ink-inverse' => $step->show_in_summary,
+                                                    'text-ink-faint hover:bg-powder-200 hover:text-ink' => ! $step->show_in_summary,
+                                                ])>
+                                                summary
+                                            </button>
+                                        </form>
+
                                         {{-- One place at a time, in plain forms. The ends are
                                              disabled rather than hidden so the controls do not
                                              shift position as steps move. --}}
@@ -265,6 +285,10 @@
                             <p class="mt-1 text-[11px] text-ink-faint">
                                 <span class="font-mono">due</span> marks a step that cannot be entered until the project has a due date.
                                 Dragging an undated card there asks for one; cancelling leaves the card where it was.
+                            </p>
+                            <p class="mt-1 text-[11px] text-ink-faint">
+                                <span class="font-mono">summary</span> lists a step's cards on the dashboard with their start
+                                and due dates, so you can see in one look what is on schedule and what is not.
                             </p>
 
                             <form method="POST" action="{{ route('admin.trackers.steps.store', $tracker) }}"

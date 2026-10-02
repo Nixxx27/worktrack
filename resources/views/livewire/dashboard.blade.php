@@ -102,6 +102,110 @@
             </p>
         @endif
 
+        {{-- ── schedule summary ──────────────────────────────────────────────
+             Every card in the steps an admin flagged "summary", with no horizon:
+             the one place that answers "is everything in progress on schedule"
+             rather than "what is about to bite". Health on the card says whether
+             anyone is touching it; this says whether it will land when promised. --}}
+        @php
+            $schedule = $m['schedule'];
+            $statusStyle = [
+                'overdue' => 'bg-health-stalled-bg text-health-stalled',
+                'due_soon' => 'bg-health-atrisk-bg text-health-atrisk',
+                'on_schedule' => 'bg-health-ontrack-bg text-health-ontrack',
+                'undated' => 'bg-canvas-sunken text-ink-soft',
+            ];
+        @endphp
+
+        <x-panel class="mt-6"
+                 heading="Schedule"
+                 note="Every card in a step marked “summary” in Settings, by step, worst first. Due soon means within 3 working days.">
+            @if ($schedule['total'] > 0)
+                <x-slot:header>
+                    <p class="flex flex-wrap items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.08em]">
+                        <span class="text-ink-faint">{{ $schedule['total'] }} in progress</span>
+                        @foreach (\App\Enums\ScheduleStatus::cases() as $status)
+                            @if ($schedule['counts'][$status->value] > 0)
+                                <span class="rounded-full px-2 py-0.5 tabular-nums {{ $statusStyle[$status->value] }}">
+                                    {{ $schedule['counts'][$status->value] }} {{ $status->label() }}
+                                </span>
+                            @endif
+                        @endforeach
+                    </p>
+                </x-slot:header>
+            @endif
+
+            @if ($schedule['steps_watched'] === 0)
+                <p class="px-5 py-10 text-center text-sm text-ink-faint">
+                    No step is set to show here. Turn on <span class="font-mono">summary</span> for a step in Settings.
+                </p>
+            @elseif ($schedule['total'] === 0)
+                <p class="px-5 py-10 text-center text-sm text-ink-faint">
+                    Nothing in the summary steps right now.
+                </p>
+            @else
+                <div class="overflow-x-auto px-5 py-2">
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-line-soft text-left font-mono text-[10px] uppercase tracking-[0.08em] text-ink-faint">
+                                <th class="py-2 pr-3 font-normal">Project</th>
+                                <th class="py-2 pr-3 font-normal">Owner · team</th>
+                                <th class="py-2 pr-3 font-normal">Start</th>
+                                <th class="py-2 pr-3 font-normal">Due</th>
+                                <th class="py-2 text-right font-normal">Schedule</th>
+                            </tr>
+                        </thead>
+                        @foreach ($schedule['groups'] as $group)
+                            <tbody>
+                                <tr>
+                                    <th colspan="5" class="pb-1.5 pt-4 text-left font-mono text-[10px] font-normal uppercase tracking-[0.08em] text-ink-soft">
+                                        {{ $group['step']->name }}
+                                        @if ($this->trackerFilter === null)
+                                            <span class="text-ink-faint">· {{ $group['tracker']->name }}</span>
+                                        @endif
+                                        <span class="text-ink-faint">· {{ $group['rows']->count() }}</span>
+                                    </th>
+                                </tr>
+                                @foreach ($group['rows'] as ['project' => $p, 'status' => $status])
+                                    @php
+                                        $people = collect([$p->owner])->filter()->concat($p->assignees)->unique('id')->values();
+                                        $span = $p->workingDays();
+                                    @endphp
+                                    <tr class="border-b border-line-soft last:border-0">
+                                        <td class="py-2.5 pr-3">
+                                            <x-project-link :project="$p">{{ $p->name }}</x-project-link>
+                                        </td>
+                                        <td class="py-2.5 pr-3 text-[11px] text-ink-faint">
+                                            @if ($people->isEmpty())
+                                                Unassigned
+                                            @else
+                                                {{ $people->first()->name }}
+                                                @if ($people->count() > 1)
+                                                    <span class="block">+ {{ $people->skip(1)->pluck('name')->join(', ') }}</span>
+                                                @endif
+                                            @endif
+                                        </td>
+                                        <td class="py-2.5 pr-3 font-mono text-[11px] tabular-nums text-ink-soft">
+                                            {{ Duration::dayDate($p->start_date, 'No start') }}
+                                        </td>
+                                        <td class="py-2.5 pr-3 font-mono text-[11px] tabular-nums text-ink-soft">
+                                            {{ Duration::dayDate($p->target_date, 'No due date') }}
+                                            @if ($span !== null)
+                                                <span class="block text-ink-faint">{{ $span }} working {{ \Illuminate\Support\Str::plural('day', $span) }}</span>
+                                            @endif
+                                        </td>
+                                        <td class="py-2.5 text-right">
+                                            <x-schedule-pill :project="$p" :status="$status" />
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        @endforeach
+                    </table>
+                </div>
+            @endif
+        </x-panel>
+
         {{-- ── FR-8.9 deadlines ─────────────────────────────────────────────── --}}
         @php
             $overdue = $m['deadlines']['overdue'];

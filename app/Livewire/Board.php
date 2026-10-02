@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Enums\ProjectHealth;
+use App\Enums\ScheduleStatus;
 use App\Models\Project;
 use App\Models\Step;
 use App\Models\Tracker;
@@ -499,6 +500,44 @@ class Board extends Component
     public function shownCards(): int
     {
         return $this->projects->sum(fn ($cards) => $cards->count());
+    }
+
+    /**
+     * The schedule summary for this board: the cards in steps flagged show_in_summary,
+     * with a verdict each, worst first.
+     *
+     * Built from projects() — the cards already on screen — rather than a query of its
+     * own, so it costs nothing against NFR-P1 and can never disagree with the columns
+     * under it: a filter that hides a card hides it from the summary too, and the
+     * viewer's own private cards count here exactly as they show there.
+     *
+     * @return array{steps: Collection, rows: \Illuminate\Support\Collection, counts: array<string, int>, byStep: array<int, array<string, int>>}
+     */
+    #[Computed]
+    public function schedule(): array
+    {
+        $steps = $this->steps->where('show_in_summary', true)->values();
+
+        $rows = $steps
+            ->flatMap(fn (Step $step) => ($this->projects[$step->id] ?? collect())
+                ->map(fn (Project $p) => ['project' => $p, 'step' => $step, 'status' => $p->scheduleStatus()]))
+            ->sortBy([
+                fn ($a, $b) => $a['status']->rank() <=> $b['status']->rank(),
+                fn ($a, $b) => ($a['project']->target_date?->toDateString() ?? '')
+                    <=> ($b['project']->target_date?->toDateString() ?? ''),
+            ])
+            ->values();
+
+        $tally = fn ($set) => collect(ScheduleStatus::cases())
+            ->mapWithKeys(fn ($s) => [$s->value => $set->where('status', $s)->count()])
+            ->all();
+
+        return [
+            'steps' => $steps,
+            'rows' => $rows,
+            'counts' => $tally($rows),
+            'byStep' => $rows->groupBy(fn ($r) => $r['step']->id)->map($tally)->all(),
+        ];
     }
 
     #[Computed]
